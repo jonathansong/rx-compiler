@@ -1,3 +1,5 @@
+add_subdirectory(Ada300HL)
+add_subdirectory(Ada300HW)
 add_subdirectory(AME)
 add_subdirectory(Bud)
 add_subdirectory(DAP)

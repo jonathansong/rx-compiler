@@ -54,4 +54,9 @@ target_link_libraries(buddy-opt
   AssumeTightMemRefLayoutPass
   StaticizeMemRefLayoutPass
   EliminateMemRefCopyPass
+  BuddyAda300HL
+  MathToAda300HLPass
+  LinalgToAda300HLPass
+  TosaToAda300HLPass
+  LowerAda300HLToAda300HWPass
   )

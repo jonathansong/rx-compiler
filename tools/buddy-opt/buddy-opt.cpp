@@ -55,6 +55,7 @@
 #include "VIR/VIRTypes.h"
 #include "VectorExp/VectorExpDialect.h"
 #include "VectorExp/VectorExpOps.h"
+#include "Ada300HL/Ada300HLDialect.h"
 
 namespace mlir {
 namespace buddy {
@@ -106,6 +107,10 @@ void registerSimplifyTosaReshapePass();
 void registerSiLUFusionPass();
 void registerSimplifyTosaMatmulScalarPass();
 void registerEliminateMemRefCopyPass();
+void registerMathToAda300HLPass();
+void registerLinalgToAda300HLPass();
+void registerTosaToAda300HLPass();
+void registerLowerAda300HLToAda300HWPass();
 } // namespace buddy
 } // namespace mlir
 
@@ -165,6 +170,11 @@ int main(int argc, char **argv) {
   // Register eliminate redundant memref.copy pass.
   mlir::buddy::registerEliminateMemRefCopyPass();
   mlir::buddy::registerSiLUFusionPass();
+  // Register Ada300HL dialect passes.
+  mlir::buddy::registerMathToAda300HLPass();
+  mlir::buddy::registerLinalgToAda300HLPass();
+  mlir::buddy::registerTosaToAda300HLPass();
+  mlir::buddy::registerLowerAda300HLToAda300HWPass();
   // Register gpu passes
   mlir::buddy::registerConvertMemcpyToGPUPass();
   mlir::buddy::registerLegalizeShmemOutliningPass();
@@ -183,7 +193,8 @@ int main(int argc, char **argv) {
                   buddy::vir::VIRDialect,
                   buddy::gemmini::GemminiDialect,
                   buddy::ame::AMEDialect,
-                  buddy::ime::IMEDialect>();
+                  buddy::ime::IMEDialect,
+                  buddy::ada300hl::Ada300HLDialect>();
   // clang-format on
 
   mlir::buddy::registerBuddyGPUTransformOps(registry);
