@@ -73,8 +73,7 @@ Tensor 指令强依赖：
 
 适合放入的 op：
 
-- `ada300hl.exp`
-- `ada300hl.pwnl`
+- `ada300hl.pwnl`（涵盖 exp/log/sqrt/rsqrt/div，通过 `func` 属性选择）
 - `ada300hl.cvt`
 - `ada300hl.vmul_mixed`
 - `ada300hl.tensor_mma`
@@ -173,8 +172,8 @@ ADA300_NonlinearFuncAttr ::= exp | log | sqrt | rsqrt | div
 
 用途：
 
-- `ada300hl.exp` 可以省略，直接固化为 exp
-- `ada300hl.pwnl` / `ada300hw.vfpwnl` 则显式携带该属性
+- `ada300hl.pwnl` 通过 `func = #ada300hl.nlfunc<exp>` 表达指数函数，无需单独的 `exp` op
+- `ada300hw.vfpwnl` 同样显式携带该属性
 
 ## 5.2 分段数属性
 
@@ -347,31 +346,7 @@ Tensor Core 并不是对任意 row-major buffer 都直接可用。
 
 ## 8.1 高层 `Ada300HL` ops
 
-### 8.1.1 `ada300hl.exp`
-
-#### 语义
-
-计算 `exp(x)`，后续可 lower 到 `ada300hw.vfpwnl`。
-
-#### 建议签名
-
-```mlir
-%y = ada300hl.exp %x {segments = 16} : vector<64xf16> -> vector<64xf16>
-```
-
-#### 属性
-
-- `segments: 16 | 32`
-- 可选 `table: SymbolRefAttr`
-
-#### trait / interface
-
-- `Pure`
-- `InferTypeOpInterface`
-
----
-
-### 8.1.2 `ada300hl.pwnl`
+### 8.1.1 `ada300hl.pwnl`
 
 #### 语义
 
@@ -616,7 +591,7 @@ ada300hw.gmma_mm %dst, %a, %w
 
 ## 9. Verifier 设计
 
-## 9.1 `ada300hl.exp` / `ada300hl.pwnl`
+## 9.1 `ada300hl.pwnl`
 
 需要检查：
 
@@ -656,7 +631,6 @@ ada300hw.gmma_mm %dst, %a, %w
 
 通常可先视为纯 op：
 
-- `ada300hl.exp`
 - `ada300hl.pwnl`
 - `ada300hl.cvt`
 - `ada300hl.vmul_mixed`
@@ -708,15 +682,15 @@ LLVM dialect / custom intrinsic / inline asm
 RISC-V backend / ADA300 backend
 ```
 
-## 11.1 `math.exp` lowering 路径
+## 11.1 `ada300hl.pwnl` lowering 路径
 
 ```text
-math.exp
-  ↓
-ada300hl.exp
-  ↓
-ada300hw.vfpwnl { func = exp, segments = 16/32 }
-  ↓
+math.exp / math.log / math.sqrt / math.rsqrt
+  ↓  (MathToAda300HL)
+ada300hl.pwnl { func = <exp|log|sqrt|rsqrt|div>, segments = 16/32 }
+  ↓  (LowerAda300HLToAda300HW)
+ada300hw.vfpwnl { func = <exp|log|sqrt|rsqrt|div>, segments = 16/32 }
+  ↓  (LowerAda300HWToLLVM)
 LLVM intrinsic / custom instruction emission
 ```
 
@@ -763,7 +737,7 @@ LLVM / backend emission
 
 ## 12.4 Ops
 
-- `ada300hl.exp`
+- `ada300hl.pwnl`（`func` 属性选择 exp/log/sqrt/rsqrt/div）
 - `ada300hl.tensor_mma`
 - `ada300hl.pack`
 - `ada300hw.vfpwnl`

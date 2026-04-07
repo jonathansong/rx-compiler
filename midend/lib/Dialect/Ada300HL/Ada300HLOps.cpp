@@ -39,11 +39,11 @@ using namespace buddy::ada300hl;
 #include "Ada300HL/Ada300HLOps.cpp.inc"
 
 //===----------------------------------------------------------------------===//
-// Ada300HL_PwnlOp
+// PwnlOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult Ada300HL_PwnlOp::verify() {
-  SegmentCount seg = getSegments().getValue();
+LogicalResult PwnlOp::verify() {
+  SegmentCount seg = getSegments();
   if (seg != SegmentCount::seg16 && seg != SegmentCount::seg32)
     return emitOpError("'segments' must be 16 or 32, got ")
            << static_cast<int>(seg);
@@ -51,10 +51,10 @@ LogicalResult Ada300HL_PwnlOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// Ada300HL_TensorMmaOp
+// TensorMmaOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult Ada300HL_TensorMmaOp::verify() {
+LogicalResult TensorMmaOp::verify() {
   if (getRowSize() <= 0)
     return emitOpError("'row_size' must be a positive integer");
   if (getColSize() <= 0)

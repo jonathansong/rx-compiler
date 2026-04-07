@@ -14,39 +14,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Provides the implementation bodies for Ada300HL attribute classes.
-//
-// Specifically this file pulls in:
-//   - Enum stringification / parsing utilities (Ada300HLOpsEnums.cpp.inc)
-//   - AttrDef class method bodies for all EnumAttr specialisations and for
-//     LayoutAttr (Ada300HLOpsAttrs.cpp.inc)
-//
-// The registration of these attribute classes with the dialect (addAttributes)
-// happens in Ada300HLDialect.cpp::initialize().
+// The enum utilities (GET_ATTRDEF_CLASSES) and AttrDef class bodies are
+// included in Ada300HLDialect.cpp so that all attribute storage types are
+// complete before addAttributes<...>() is instantiated there.  This file
+// is intentionally left with no additional definitions to avoid ODR violations.
 //
 //===----------------------------------------------------------------------===//
-
-#include "Ada300HL/Ada300HLDialect.h"
-#include "mlir/IR/DialectImplementation.h"
-#include "llvm/ADT/TypeSwitch.h"
-
-using namespace mlir;
-using namespace buddy::ada300hl;
-
-//===----------------------------------------------------------------------===//
-// Enum utilities – stringification, parsing, and operator<< overloads.
-// Generated from the I32EnumAttr definitions in Ada300HLAttrs.td.
-//===----------------------------------------------------------------------===//
-
-#include "Ada300HL/Ada300HLOpsEnums.cpp.inc"
-
-//===----------------------------------------------------------------------===//
-// AttrDef class implementations – parser, printer, and storage bodies for
-// all EnumAttr specialisations (NonlinearFuncAttr, SegmentCountAttr, …)
-// and for the structured LayoutAttr.
-// Generated from the AttrDef / EnumAttr definitions in Ada300HLAttrs.td via
-// the -gen-attrdef-defs tablegen backend.
-//===----------------------------------------------------------------------===//
-
-#define GET_ATTRDEF_CLASSES
-#include "Ada300HL/Ada300HLOpsAttrs.cpp.inc"

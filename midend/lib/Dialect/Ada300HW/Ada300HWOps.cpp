@@ -39,22 +39,22 @@ using namespace buddy::ada300hl;
 #include "Ada300HW/Ada300HWOps.cpp.inc"
 
 //===----------------------------------------------------------------------===//
-// Ada300HW_VfpwnlOp
+// VfpwnlOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult Ada300HW_VfpwnlOp::verify() {
+LogicalResult VfpwnlOp::verify() {
   // Segment count must be one of the two ISA-defined values.
-  SegmentCount seg = getSegments().getValue();
+  SegmentCount seg = getSegments();
   if (seg != SegmentCount::seg16 && seg != SegmentCount::seg32)
     return emitOpError("'segments' must be 16 or 32");
   return success();
 }
 
 //===----------------------------------------------------------------------===//
-// Ada300HW_SetGmmCfgOp
+// SetGmmCfgOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult Ada300HW_SetGmmCfgOp::verify() {
+LogicalResult SetGmmCfgOp::verify() {
   if (getRowSize() <= 0)
     return emitOpError("'row_size' must be a positive integer");
   if (getColSize() <= 0)
@@ -65,10 +65,10 @@ LogicalResult Ada300HW_SetGmmCfgOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// Ada300HW_SetGmmIterOp
+// SetGmmIterOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult Ada300HW_SetGmmIterOp::verify() {
+LogicalResult SetGmmIterOp::verify() {
   if (getBlkCntA() <= 0)
     return emitOpError("'blk_cnt_a' must be a positive integer");
   if (getBlkCntW() <= 0)

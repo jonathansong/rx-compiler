@@ -28,9 +28,30 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/MLIRContext.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
 using namespace buddy::ada300hl;
+
+//===----------------------------------------------------------------------===//
+// Full TypeDef class bodies (storage + parse/print) – must appear before any
+// template instantiation of addTypes<Fp8Type>() so that Fp8TypeStorage is a
+// complete type at that point.
+//===----------------------------------------------------------------------===//
+
+#define GET_TYPEDEF_CLASSES
+#include "Ada300HL/Ada300HLOpsTypes.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// Full AttrDef class bodies (storage + parse/print) – must appear before any
+// template instantiation of addAttributes<...>() so that all AttrStorage
+// types are complete at that point.
+//===----------------------------------------------------------------------===//
+
+#include "Ada300HL/Ada300HLOpsEnums.cpp.inc"
+
+#define GET_ATTRDEF_CLASSES
+#include "Ada300HL/Ada300HLOpsAttrs.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Generated dialect boilerplate (print/parse dispatch, etc.)

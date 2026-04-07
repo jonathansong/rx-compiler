@@ -235,7 +235,7 @@ def Ada300HL_LayoutAttr : AttrDef<Ada300HL_Dialect, "Layout", []> {
     "int32_t":$block_n,
     "int32_t":$block_k,
     "bool":$rhs_transposed,
-    "int32_t":$major
+    "int32_t":$matrix_major
   );
 
   let assemblyFormat = [{
@@ -243,7 +243,7 @@ def Ada300HL_LayoutAttr : AttrDef<Ada300HL_Dialect, "Layout", []> {
         `block_n` `=` $block_n `,`
         `block_k` `=` $block_k `,`
         `rhs_transposed` `=` $rhs_transposed `,`
-        `major` `=` $major `>`
+        `major` `=` $matrix_major `>`
   }];
 }
 

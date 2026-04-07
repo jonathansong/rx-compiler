@@ -14,27 +14,9 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Provides the implementation bodies for Ada300HL custom type classes.
-// Currently this covers:
-//   - Fp8Type (E4M3 format FP8 used in mixed-precision Tensor Core paths)
-//
-// The registration of these type classes with the dialect (addTypes) happens
-// in Ada300HLDialect.cpp::initialize().
+// The Fp8Type implementation bodies (GET_TYPEDEF_CLASSES) are included in
+// Ada300HLDialect.cpp so that Fp8TypeStorage is a complete type before
+// addTypes<Fp8Type>() is instantiated.  This file is intentionally left
+// with no additional definitions to avoid ODR violations.
 //
 //===----------------------------------------------------------------------===//
-
-#include "Ada300HL/Ada300HLDialect.h"
-#include "mlir/IR/DialectImplementation.h"
-#include "llvm/ADT/TypeSwitch.h"
-
-using namespace mlir;
-using namespace buddy::ada300hl;
-
-//===----------------------------------------------------------------------===//
-// TypeDef class implementations – parser, printer, and storage bodies for
-// all TypeDef definitions in Ada300HLTypes.td (currently only Fp8Type).
-// Generated via the -gen-typedef-defs tablegen backend.
-//===----------------------------------------------------------------------===//
-
-#define GET_TYPEDEF_CLASSES
-#include "Ada300HL/Ada300HLOpsTypes.cpp.inc"

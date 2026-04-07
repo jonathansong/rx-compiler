@@ -33,7 +33,7 @@
 
 include "Ada300HW/Ada300HWDialect.td"
 include "Ada300HW/Ada300HWAttrs.td"
-include "mlir/IR/OpDefinition.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//

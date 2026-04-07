@@ -151,8 +151,7 @@ midend/
 
 | Op | Traits | 描述 | 示例 |
 |---|---|---|---|
-| `ada300hl.exp` | `Pure` | 通过 PWL 单元的逐元素 `exp(x)` | `%y = ada300hl.exp %x {segments = #ada300hl.segments<16>} : vector<64xf16> -> vector<64xf16>` |
-| `ada300hl.pwnl` | `Pure` | 通用 PWL（exp/log/sqrt/rsqrt/div） | `%y = ada300hl.pwnl %x {func = #ada300hl.nlfunc<sqrt>, segments = #ada300hl.segments<32>} : ...` |
+| `ada300hl.pwnl` | `Pure` | 通用 PWL（exp/log/sqrt/rsqrt/div）；使用 `func = #ada300hl.nlfunc<exp>` 表示指数函数 | `%y = ada300hl.pwnl %x {func = #ada300hl.nlfunc<exp>, segments = #ada300hl.segments<16>} : vector<64xf16> -> vector<64xf16>` |
 | `ada300hl.cvt` | `Pure` | 混合精度类型转换 | `%y = ada300hl.cvt %x {dst_type = #ada300hl.dtype<fp8>, part = #ada300hl.part<low>} : ...` |
 | `ada300hl.vmul_mixed` | `Pure` | 混合精度向量乘法 | `%z = ada300hl.vmul_mixed %a, %b {acc_type = #ada300hl.dtype<fp16>, part = #ada300hl.part<low>} : ...` |
 
@@ -251,7 +250,7 @@ midend/
 
 | 输入 | 输出 | 备注 |
 |---|---|---|
-| `math.exp %v` | `ada300hl.exp %v {segments = 16}` | 默认 16 段表 |
+| `math.exp %v` | `ada300hl.pwnl %v {func=exp, segments=16}` | 默认 16 段表；`exp` 是 `pwnl` 的一种函数类型 |
 | `math.log %v` | `ada300hl.pwnl %v {func=log, segments=16}` | |
 | `math.sqrt %v` | `ada300hl.pwnl %v {func=sqrt, segments=16}` | |
 | `math.rsqrt %v` | `ada300hl.pwnl %v {func=rsqrt, segments=16}` | |
@@ -310,8 +309,7 @@ SRAM 缓冲区地址由下游内存规划 Pass 解析；在此阶段它们是普
 
 | Ada300HL Op | Ada300HW 输出 | 备注 |
 |---|---|---|
-| `ada300hl.exp` | `ada300hw.vfpwnl {func=exp, masked=false}` | `func` 固定为 `exp` |
-| `ada300hl.pwnl` | `ada300hw.vfpwnl {func=<转发>, masked=false}` | `func` 属性转发 |
+| `ada300hl.pwnl` | `ada300hw.vfpwnl {func=<转发>, masked=false}` | `func` 属性转发（含 `exp`、`log`、`sqrt`、`rsqrt`、`div`） |
 | `ada300hl.cvt` | `ada300hw.vfcvt` | `dst_type` 和 `part` 转发 |
 | `ada300hl.vmul_mixed`（`part=low`） | `ada300hw.vfmul_low` | `src_a/b_type` 从 MLIR 元素类型推断 |
 | `ada300hl.vmul_mixed`（`part=high`） | `ada300hw.vfmul_high` | |
@@ -378,14 +376,14 @@ SRAM 缓冲区地址由下游内存规划 Pass 解析；在此阶段它们是普
          │  --math-to-ada300hl
          │
 3.  linalg.matmul              （linalg）
-    ada300hl.exp               （高级）
+    ada300hl.pwnl {func=exp}   （高级）
          │
          │  --linalg-to-ada300hl
          │
 4.  ada300hl.copy_to_sram
     ada300hl.tensor_mma
     ada300hl.tensor_sync
-    ada300hl.exp               （全部为 ada300hl）
+    ada300hl.pwnl {func=exp}   （全部为 ada300hl）
          │
          │  --lower-ada300hl-to-ada300hw
          │
