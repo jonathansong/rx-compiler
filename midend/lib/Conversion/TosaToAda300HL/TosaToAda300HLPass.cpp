@@ -68,7 +68,7 @@
 #include "Ada300HL/Ada300HLOps.h"
 
 using namespace mlir;
-using namespace buddy::ada300hl;
+using namespace ::buddy::ada300hl;
 
 //===----------------------------------------------------------------------===//
 // Shared helpers
@@ -151,7 +151,7 @@ struct TosaExpToAda300HL : public OpRewritePattern<tosa::ExpOp> {
     VectorType vecTy = tensorToVecType(resultTy);
 
     Value vec = readIntoVector(rewriter, loc, op->getOperand(0), vecTy);
-    Value result = rewriter.create<Ada300HL_PwnlOp>(
+    Value result = rewriter.create<PwnlOp>(
         loc, vecTy, vec, NonlinearFuncAttr::get(ctx, NonlinearFunc::exp),
         defaultSegments(ctx));
     rewriter.replaceOp(op, writeFromVector(rewriter, loc, result, resultTy));
@@ -179,7 +179,7 @@ struct TosaLogToAda300HL : public OpRewritePattern<tosa::LogOp> {
     VectorType vecTy = tensorToVecType(resultTy);
 
     Value vec = readIntoVector(rewriter, loc, op->getOperand(0), vecTy);
-    Value result = rewriter.create<Ada300HL_PwnlOp>(
+    Value result = rewriter.create<PwnlOp>(
         loc, vecTy, vec, NonlinearFuncAttr::get(ctx, NonlinearFunc::log),
         defaultSegments(ctx));
     rewriter.replaceOp(op, writeFromVector(rewriter, loc, result, resultTy));
@@ -207,7 +207,7 @@ struct TosaRsqrtToAda300HL : public OpRewritePattern<tosa::RsqrtOp> {
     VectorType vecTy = tensorToVecType(resultTy);
 
     Value vec = readIntoVector(rewriter, loc, op->getOperand(0), vecTy);
-    Value result = rewriter.create<Ada300HL_PwnlOp>(
+    Value result = rewriter.create<PwnlOp>(
         loc, vecTy, vec, NonlinearFuncAttr::get(ctx, NonlinearFunc::rsqrt),
         defaultSegments(ctx));
     rewriter.replaceOp(op, writeFromVector(rewriter, loc, result, resultTy));
@@ -241,7 +241,7 @@ struct TosaSigmoidToAda300HL : public OpRewritePattern<tosa::SigmoidOp> {
     // tosa.sigmoid uses operand named "input" (cf. SiLUFusion.cpp).
     Value vec = readIntoVector(rewriter, loc, op.getInput(), vecTy);
     Value result =
-        rewriter.create<Ada300HL_SigmoidOp>(loc, vecTy, vec, defaultSegments(ctx));
+        rewriter.create<SigmoidOp>(loc, vecTy, vec, defaultSegments(ctx));
     rewriter.replaceOp(op, writeFromVector(rewriter, loc, result, resultTy));
     return success();
   }

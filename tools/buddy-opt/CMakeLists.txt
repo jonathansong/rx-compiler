@@ -59,4 +59,5 @@ target_link_libraries(buddy-opt
   LinalgToAda300HLPass
   TosaToAda300HLPass
   LowerAda300HLToAda300HWPass
+  LowerAda300HWToLLVMPass
   )

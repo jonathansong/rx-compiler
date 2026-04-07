@@ -51,6 +51,41 @@ LogicalResult PwnlOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// SinOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult SinOp::verify() {
+  SegmentCount seg = getSegments();
+  if (seg != SegmentCount::seg16 && seg != SegmentCount::seg32)
+    return emitOpError("'segments' must be 16 or 32, got ")
+           << static_cast<int>(seg);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// CosOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult CosOp::verify() {
+  SegmentCount seg = getSegments();
+  if (seg != SegmentCount::seg16 && seg != SegmentCount::seg32)
+    return emitOpError("'segments' must be 16 or 32, got ")
+           << static_cast<int>(seg);
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// RmsNormOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult RmsNormOp::verify() {
+  if (getInput().getType() != getScale().getType())
+    return emitOpError("'input' and 'scale' must have the same type, got ")
+           << getInput().getType() << " vs " << getScale().getType();
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // TensorMmaOp
 //===----------------------------------------------------------------------===//
 

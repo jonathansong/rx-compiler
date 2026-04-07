@@ -68,7 +68,7 @@
 #include "Ada300HL/Ada300HLOps.h"
 
 using namespace mlir;
-using namespace buddy::ada300hl;
+using namespace ::buddy::ada300hl;
 
 //===----------------------------------------------------------------------===//
 // Helper – map MLIR element type to Ada300HL TensorDataType enum
@@ -150,11 +150,11 @@ struct LinalgMatmulToAda300HLTensorMma
     Value bSram = rewriter.create<memref::AllocOp>(loc, bTy);
 
     // --- Copy A and B into SRAM ------------------------------------------
-    rewriter.create<Ada300HL_CopyToSramOp>(loc, A, aSram);
-    rewriter.create<Ada300HL_CopyToSramOp>(loc, B, bSram);
+    rewriter.create<CopyToSramOp>(loc, A, aSram);
+    rewriter.create<CopyToSramOp>(loc, B, bSram);
 
     // --- Emit the Tensor Core MMA ----------------------------------------
-    rewriter.create<Ada300HL_TensorMmaOp>(
+    rewriter.create<TensorMmaOp>(
         loc,
         /*dst=*/C,
         /*act=*/aSram,
@@ -170,7 +170,7 @@ struct LinalgMatmulToAda300HLTensorMma
         /*blk_cnt_a=*/mkI32(1),
         /*blk_cnt_w=*/mkI32(1));
 
-    rewriter.create<Ada300HL_TensorSyncOp>(loc);
+    rewriter.create<TensorSyncOp>(loc);
 
     // --- Free the staging buffers ----------------------------------------
     rewriter.create<memref::DeallocOp>(loc, aSram);

@@ -37,6 +37,7 @@ endif()
 _add_test_executable(buddy-audio-container-test
   AudioContainerTest.cpp
 )
+target_compile_options(buddy-audio-container-test PRIVATE -Wno-type-limits)
 
 _add_test_executable(buddy-text-container-test
   TextContainerTest.cpp

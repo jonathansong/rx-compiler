@@ -56,6 +56,7 @@
 #include "VectorExp/VectorExpDialect.h"
 #include "VectorExp/VectorExpOps.h"
 #include "Ada300HL/Ada300HLDialect.h"
+#include "Ada300HW/Ada300HWDialect.h"
 
 namespace mlir {
 namespace buddy {
@@ -111,6 +112,7 @@ void registerMathToAda300HLPass();
 void registerLinalgToAda300HLPass();
 void registerTosaToAda300HLPass();
 void registerLowerAda300HLToAda300HWPass();
+void registerLowerAda300HWToLLVMPass();
 } // namespace buddy
 } // namespace mlir
 
@@ -175,6 +177,7 @@ int main(int argc, char **argv) {
   mlir::buddy::registerLinalgToAda300HLPass();
   mlir::buddy::registerTosaToAda300HLPass();
   mlir::buddy::registerLowerAda300HLToAda300HWPass();
+  mlir::buddy::registerLowerAda300HWToLLVMPass();
   // Register gpu passes
   mlir::buddy::registerConvertMemcpyToGPUPass();
   mlir::buddy::registerLegalizeShmemOutliningPass();
@@ -194,7 +197,8 @@ int main(int argc, char **argv) {
                   buddy::gemmini::GemminiDialect,
                   buddy::ame::AMEDialect,
                   buddy::ime::IMEDialect,
-                  buddy::ada300hl::Ada300HLDialect>();
+                  buddy::ada300hl::Ada300HLDialect,
+                  buddy::ada300hw::Ada300HWDialect>();
   // clang-format on
 
   mlir::buddy::registerBuddyGPUTransformOps(registry);

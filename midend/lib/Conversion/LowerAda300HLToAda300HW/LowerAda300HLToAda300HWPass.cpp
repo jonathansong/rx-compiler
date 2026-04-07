@@ -59,8 +59,8 @@
 #include "Ada300HW/Ada300HWOps.h"
 
 using namespace mlir;
-using namespace buddy::ada300hl;
-using namespace buddy::ada300hw;
+using namespace ::buddy::ada300hl;
+using namespace ::buddy::ada300hw;
 
 //===----------------------------------------------------------------------===//
 // Helper – infer Ada300HL TensorDataType from an MLIR element type
@@ -95,12 +95,12 @@ static TensorDataTypeAttr inferDataTypeAttr(MLIRContext *ctx, Type elemTy) {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerPwnlOp : public OpRewritePattern<Ada300HL_PwnlOp> {
+struct LowerPwnlOp : public OpRewritePattern<PwnlOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(Ada300HL_PwnlOp op,
+  LogicalResult matchAndRewrite(PwnlOp op,
                                 PatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<Ada300HW_VfpwnlOp>(
+    rewriter.replaceOpWithNewOp<VfpwnlOp>(
         op, op.getResult().getType(), op.getInput(),
         op.getFuncAttr(), op.getSegmentsAttr(), rewriter.getBoolAttr(false));
     return success();
@@ -113,12 +113,12 @@ struct LowerPwnlOp : public OpRewritePattern<Ada300HL_PwnlOp> {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerCvtOp : public OpRewritePattern<Ada300HL_CvtOp> {
+struct LowerCvtOp : public OpRewritePattern<CvtOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(Ada300HL_CvtOp op,
+  LogicalResult matchAndRewrite(CvtOp op,
                                 PatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<Ada300HW_VfcvtOp>(
+    rewriter.replaceOpWithNewOp<VfcvtOp>(
         op, op.getResult().getType(), op.getInput(),
         op.getDstTypeAttr(), op.getPartAttr());
     return success();
@@ -131,10 +131,10 @@ struct LowerCvtOp : public OpRewritePattern<Ada300HL_CvtOp> {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerVMulMixedOp : public OpRewritePattern<Ada300HL_VMulMixedOp> {
+struct LowerVMulMixedOp : public OpRewritePattern<VMulMixedOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(Ada300HL_VMulMixedOp op,
+  LogicalResult matchAndRewrite(VMulMixedOp op,
                                 PatternRewriter &rewriter) const override {
     MLIRContext *ctx = rewriter.getContext();
 
@@ -146,11 +146,11 @@ struct LowerVMulMixedOp : public OpRewritePattern<Ada300HL_VMulMixedOp> {
     Type resultTy = op.getResult().getType();
 
     if (op.getPartAttr().getValue() == Part::low) {
-      rewriter.replaceOpWithNewOp<Ada300HW_VfmulLowOp>(
+      rewriter.replaceOpWithNewOp<VfmulLowOp>(
           op, resultTy, op.getLhs(), op.getRhs(),
           srcAAttr, srcBAttr, op.getAccTypeAttr());
     } else {
-      rewriter.replaceOpWithNewOp<Ada300HW_VfmulHighOp>(
+      rewriter.replaceOpWithNewOp<VfmulHighOp>(
           op, resultTy, op.getLhs(), op.getRhs(),
           srcAAttr, srcBAttr, op.getAccTypeAttr());
     }
@@ -171,34 +171,34 @@ struct LowerVMulMixedOp : public OpRewritePattern<Ada300HL_VMulMixedOp> {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerTensorMmaOp : public OpRewritePattern<Ada300HL_TensorMmaOp> {
+struct LowerTensorMmaOp : public OpRewritePattern<TensorMmaOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(Ada300HL_TensorMmaOp op,
+  LogicalResult matchAndRewrite(TensorMmaOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op.getLoc();
 
     // 1. Write gmm_cfg configuration register.
-    rewriter.create<Ada300HW_SetGmmCfgOp>(
+    rewriter.create<SetGmmCfgOp>(
         loc, op.getRowSizeAttr(), op.getColSizeAttr(),
         op.getAccSizeAttr(), op.getModeAttr());
 
     // 2. Write gmm_type configuration register.
-    rewriter.create<Ada300HW_SetGmmTypeOp>(
+    rewriter.create<SetGmmTypeOp>(
         loc, op.getOutTypeAttr(), op.getActTypeAttr(), op.getWhtTypeAttr());
 
     // 3. Write gmm_iter configuration register.
-    rewriter.create<Ada300HW_SetGmmIterOp>(
+    rewriter.create<SetGmmIterOp>(
         loc, op.getBlkCntAAttr(), op.getBlkCntWAttr());
 
     // 4. Emit the execute instruction.
     //    Use gmma_mt (transposed weights) when rhs_transposed = true,
     //    otherwise use gmma_mm.
     if (op.getRhsTransposed())
-      rewriter.create<Ada300HW_GmmaMtOp>(
+      rewriter.create<GmmaMtOp>(
           loc, op.getDst(), op.getAct(), op.getWht());
     else
-      rewriter.create<Ada300HW_GmmaMmOp>(
+      rewriter.create<GmmaMmOp>(
           loc, op.getDst(), op.getAct(), op.getWht());
 
     rewriter.eraseOp(op);
@@ -212,12 +212,12 @@ struct LowerTensorMmaOp : public OpRewritePattern<Ada300HL_TensorMmaOp> {
 //===----------------------------------------------------------------------===//
 
 namespace {
-struct LowerTensorSyncOp : public OpRewritePattern<Ada300HL_TensorSyncOp> {
+struct LowerTensorSyncOp : public OpRewritePattern<TensorSyncOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(Ada300HL_TensorSyncOp op,
+  LogicalResult matchAndRewrite(TensorSyncOp op,
                                 PatternRewriter &rewriter) const override {
-    rewriter.replaceOpWithNewOp<Ada300HW_TcsyncOp>(op);
+    rewriter.replaceOpWithNewOp<TcsyncOp>(op);
     return success();
   }
 };
@@ -239,9 +239,9 @@ struct LowerTensorSyncOp : public OpRewritePattern<Ada300HL_TensorSyncOp> {
 
 namespace {
 
-struct LowerPackOp : public OpRewritePattern<Ada300HL_PackOp> {
+struct LowerPackOp : public OpRewritePattern<PackOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(Ada300HL_PackOp op,
+  LogicalResult matchAndRewrite(PackOp op,
                                 PatternRewriter &rewriter) const override {
     // Emit a memref.copy as a semantics-preserving placeholder.
     rewriter.replaceOpWithNewOp<memref::CopyOp>(op, op.getSrc(), op.getDst());
@@ -249,18 +249,18 @@ struct LowerPackOp : public OpRewritePattern<Ada300HL_PackOp> {
   }
 };
 
-struct LowerUnpackOp : public OpRewritePattern<Ada300HL_UnpackOp> {
+struct LowerUnpackOp : public OpRewritePattern<UnpackOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(Ada300HL_UnpackOp op,
+  LogicalResult matchAndRewrite(UnpackOp op,
                                 PatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<memref::CopyOp>(op, op.getSrc(), op.getDst());
     return success();
   }
 };
 
-struct LowerLayoutCastOp : public OpRewritePattern<Ada300HL_LayoutCastOp> {
+struct LowerLayoutCastOp : public OpRewritePattern<LayoutCastOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(Ada300HL_LayoutCastOp op,
+  LogicalResult matchAndRewrite(LayoutCastOp op,
                                 PatternRewriter &rewriter) const override {
     // layout_cast is view-like: erase it and replace uses with the source.
     rewriter.replaceOp(op, op.getSrc());
@@ -268,36 +268,36 @@ struct LowerLayoutCastOp : public OpRewritePattern<Ada300HL_LayoutCastOp> {
   }
 };
 
-struct LowerCopyToSramOp : public OpRewritePattern<Ada300HL_CopyToSramOp> {
+struct LowerCopyToSramOp : public OpRewritePattern<CopyToSramOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(Ada300HL_CopyToSramOp op,
+  LogicalResult matchAndRewrite(CopyToSramOp op,
                                 PatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<memref::CopyOp>(op, op.getSrc(), op.getDst());
     return success();
   }
 };
 
-struct LowerCopyFromSramOp : public OpRewritePattern<Ada300HL_CopyFromSramOp> {
+struct LowerCopyFromSramOp : public OpRewritePattern<CopyFromSramOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(Ada300HL_CopyFromSramOp op,
+  LogicalResult matchAndRewrite(CopyFromSramOp op,
                                 PatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<memref::CopyOp>(op, op.getSrc(), op.getDst());
     return success();
   }
 };
 
-struct LowerCopyToVrOp : public OpRewritePattern<Ada300HL_CopyToVrOp> {
+struct LowerCopyToVrOp : public OpRewritePattern<CopyToVrOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(Ada300HL_CopyToVrOp op,
+  LogicalResult matchAndRewrite(CopyToVrOp op,
                                 PatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<memref::CopyOp>(op, op.getSrc(), op.getDst());
     return success();
   }
 };
 
-struct LowerCopyFromVrOp : public OpRewritePattern<Ada300HL_CopyFromVrOp> {
+struct LowerCopyFromVrOp : public OpRewritePattern<CopyFromVrOp> {
   using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(Ada300HL_CopyFromVrOp op,
+  LogicalResult matchAndRewrite(CopyFromVrOp op,
                                 PatternRewriter &rewriter) const override {
     rewriter.replaceOpWithNewOp<memref::CopyOp>(op, op.getSrc(), op.getDst());
     return success();

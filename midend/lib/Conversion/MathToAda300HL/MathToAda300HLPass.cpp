@@ -51,7 +51,7 @@
 #include "Ada300HL/Ada300HLOps.h"
 
 using namespace mlir;
-using namespace buddy::ada300hl;
+using namespace ::buddy::ada300hl;
 
 //===----------------------------------------------------------------------===//
 // Helper – default segment-count attribute
@@ -85,7 +85,7 @@ struct MathExpToAda300HLPwnl : public OpRewritePattern<math::ExpOp> {
 
     auto funcAttr =
         NonlinearFuncAttr::get(rewriter.getContext(), NonlinearFunc::exp);
-    rewriter.replaceOpWithNewOp<Ada300HL_PwnlOp>(
+    rewriter.replaceOpWithNewOp<PwnlOp>(
         op, op.getResult().getType(), op.getOperand(), funcAttr,
         defaultSegments(rewriter.getContext()));
     return success();
@@ -108,7 +108,7 @@ struct MathLogToAda300HLPwnl : public OpRewritePattern<math::LogOp> {
 
     auto funcAttr =
         NonlinearFuncAttr::get(rewriter.getContext(), NonlinearFunc::log);
-    rewriter.replaceOpWithNewOp<Ada300HL_PwnlOp>(
+    rewriter.replaceOpWithNewOp<PwnlOp>(
         op, op.getResult().getType(), op.getOperand(), funcAttr,
         defaultSegments(rewriter.getContext()));
     return success();
@@ -131,7 +131,7 @@ struct MathSqrtToAda300HLPwnl : public OpRewritePattern<math::SqrtOp> {
 
     auto funcAttr =
         NonlinearFuncAttr::get(rewriter.getContext(), NonlinearFunc::sqrt);
-    rewriter.replaceOpWithNewOp<Ada300HL_PwnlOp>(
+    rewriter.replaceOpWithNewOp<PwnlOp>(
         op, op.getResult().getType(), op.getOperand(), funcAttr,
         defaultSegments(rewriter.getContext()));
     return success();
@@ -154,7 +154,7 @@ struct MathRsqrtToAda300HLPwnl : public OpRewritePattern<math::RsqrtOp> {
 
     auto funcAttr =
         NonlinearFuncAttr::get(rewriter.getContext(), NonlinearFunc::rsqrt);
-    rewriter.replaceOpWithNewOp<Ada300HL_PwnlOp>(
+    rewriter.replaceOpWithNewOp<PwnlOp>(
         op, op.getResult().getType(), op.getOperand(), funcAttr,
         defaultSegments(rewriter.getContext()));
     return success();

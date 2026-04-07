@@ -67,8 +67,8 @@
 #include "Ada300HW/Transforms.h"
 
 using namespace mlir;
-using namespace buddy::ada300hw;
-using namespace buddy::ada300hl; // for shared attrs
+using namespace ::buddy::ada300hw;
+using namespace ::buddy::ada300hl; // for shared attrs
 
 //===----------------------------------------------------------------------===//
 // Attribute → string helpers
@@ -83,6 +83,8 @@ static StringRef nlFuncStr(NonlinearFunc f) {
   case NonlinearFunc::sqrt:  return "sqrt";
   case NonlinearFunc::rsqrt: return "rsqrt";
   case NonlinearFunc::div:   return "div";
+  case NonlinearFunc::sin:   return "sin";
+  case NonlinearFunc::cos:   return "cos";
   }
   llvm_unreachable("unknown NonlinearFunc");
 }
@@ -114,6 +116,7 @@ static void emitSideEffectAsm(Location loc, StringRef asmStr,
       /*constraints=*/rewriter.getStringAttr(""),
       /*has_side_effects=*/true,
       /*is_align_stack=*/false,
+      /*tail_call_kind=*/LLVM::TailCallKind::None,
       /*asm_dialect=*/asmDialect,
       /*operand_attrs=*/ArrayAttr{});
 }
@@ -134,6 +137,7 @@ static Value emitVectorUnaryAsm(Location loc, Type resultLLVMTy, Value input,
       /*constraints=*/rewriter.getStringAttr("=vr,vr"),
       /*has_side_effects=*/false,
       /*is_align_stack=*/false,
+      /*tail_call_kind=*/LLVM::TailCallKind::None,
       /*asm_dialect=*/asmDialect,
       /*operand_attrs=*/ArrayAttr{});
   return asmOp.getRes();
@@ -155,6 +159,7 @@ static Value emitVectorBinaryAsm(Location loc, Type resultLLVMTy, Value lhs,
       /*constraints=*/rewriter.getStringAttr("=vr,vr,vr"),
       /*has_side_effects=*/false,
       /*is_align_stack=*/false,
+      /*tail_call_kind=*/LLVM::TailCallKind::None,
       /*asm_dialect=*/asmDialect,
       /*operand_attrs=*/ArrayAttr{});
   return asmOp.getRes();
@@ -177,6 +182,7 @@ static void emitThreePtrAsm(Location loc, Value pDst, Value pAct, Value pWht,
       /*constraints=*/rewriter.getStringAttr("r,r,r"),
       /*has_side_effects=*/true,
       /*is_align_stack=*/false,
+      /*tail_call_kind=*/LLVM::TailCallKind::None,
       /*asm_dialect=*/asmDialect,
       /*operand_attrs=*/ArrayAttr{});
 }
@@ -201,12 +207,12 @@ static Value extractAlignedPtr(Location loc, Value llvmMemref,
 namespace {
 
 // ada300hw.vfpwnl → vfpwnl.<func>.<segments>  vd, vs1
-struct LowerVfpwnlOp : public ConvertOpToLLVMPattern<Ada300HW_VfpwnlOp> {
+struct LowerVfpwnlOp : public ConvertOpToLLVMPattern<VfpwnlOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_VfpwnlOp op,
-                  Ada300HW_VfpwnlOp::Adaptor adaptor,
+  matchAndRewrite(VfpwnlOp op,
+                  VfpwnlOp::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type resultLLVMTy =
         getTypeConverter()->convertType(op.getResult().getType());
@@ -227,12 +233,12 @@ struct LowerVfpwnlOp : public ConvertOpToLLVMPattern<Ada300HW_VfpwnlOp> {
 };
 
 // ada300hw.vfcvt → vfcvt.<part>  vd, vs1
-struct LowerVfcvtOp : public ConvertOpToLLVMPattern<Ada300HW_VfcvtOp> {
+struct LowerVfcvtOp : public ConvertOpToLLVMPattern<VfcvtOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_VfcvtOp op,
-                  Ada300HW_VfcvtOp::Adaptor adaptor,
+  matchAndRewrite(VfcvtOp op,
+                  VfcvtOp::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type resultLLVMTy =
         getTypeConverter()->convertType(op.getResult().getType());
@@ -251,12 +257,12 @@ struct LowerVfcvtOp : public ConvertOpToLLVMPattern<Ada300HW_VfcvtOp> {
 };
 
 // ada300hw.vfmul_low → vfmul.low  vd, vs1, vs2
-struct LowerVfmulLowOp : public ConvertOpToLLVMPattern<Ada300HW_VfmulLowOp> {
+struct LowerVfmulLowOp : public ConvertOpToLLVMPattern<VfmulLowOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_VfmulLowOp op,
-                  Ada300HW_VfmulLowOp::Adaptor adaptor,
+  matchAndRewrite(VfmulLowOp op,
+                  VfmulLowOp::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type resultLLVMTy =
         getTypeConverter()->convertType(op.getResult().getType());
@@ -274,12 +280,12 @@ struct LowerVfmulLowOp : public ConvertOpToLLVMPattern<Ada300HW_VfmulLowOp> {
 
 // ada300hw.vfmul_high → vfmul.high  vd, vs1, vs2
 struct LowerVfmulHighOp
-    : public ConvertOpToLLVMPattern<Ada300HW_VfmulHighOp> {
+    : public ConvertOpToLLVMPattern<VfmulHighOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_VfmulHighOp op,
-                  Ada300HW_VfmulHighOp::Adaptor adaptor,
+  matchAndRewrite(VfmulHighOp op,
+                  VfmulHighOp::Adaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
     Type resultLLVMTy =
         getTypeConverter()->convertType(op.getResult().getType());
@@ -301,12 +307,12 @@ struct LowerVfmulHighOp
 
 // ada300hw.set_gmm_cfg → gmm.cfg <row>, <col>, <acc>, <mode>
 struct LowerSetGmmCfgOp
-    : public ConvertOpToLLVMPattern<Ada300HW_SetGmmCfgOp> {
+    : public ConvertOpToLLVMPattern<SetGmmCfgOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_SetGmmCfgOp op,
-                  Ada300HW_SetGmmCfgOp::Adaptor /*adaptor*/,
+  matchAndRewrite(SetGmmCfgOp op,
+                  SetGmmCfgOp::Adaptor /*adaptor*/,
                   ConversionPatternRewriter &rewriter) const override {
     std::string asmStr =
         llvm::formatv("gmm.cfg {0}, {1}, {2}, {3}",
@@ -321,12 +327,12 @@ struct LowerSetGmmCfgOp
 
 // ada300hw.set_gmm_type → gmm.type <out_dt>, <act_dt>, <wht_dt>
 struct LowerSetGmmTypeOp
-    : public ConvertOpToLLVMPattern<Ada300HW_SetGmmTypeOp> {
+    : public ConvertOpToLLVMPattern<SetGmmTypeOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_SetGmmTypeOp op,
-                  Ada300HW_SetGmmTypeOp::Adaptor /*adaptor*/,
+  matchAndRewrite(SetGmmTypeOp op,
+                  SetGmmTypeOp::Adaptor /*adaptor*/,
                   ConversionPatternRewriter &rewriter) const override {
     std::string asmStr =
         llvm::formatv("gmm.type {0}, {1}, {2}",
@@ -342,12 +348,12 @@ struct LowerSetGmmTypeOp
 
 // ada300hw.set_gmm_iter → gmm.iter <blk_cnt_a>, <blk_cnt_w>
 struct LowerSetGmmIterOp
-    : public ConvertOpToLLVMPattern<Ada300HW_SetGmmIterOp> {
+    : public ConvertOpToLLVMPattern<SetGmmIterOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_SetGmmIterOp op,
-                  Ada300HW_SetGmmIterOp::Adaptor /*adaptor*/,
+  matchAndRewrite(SetGmmIterOp op,
+                  SetGmmIterOp::Adaptor /*adaptor*/,
                   ConversionPatternRewriter &rewriter) const override {
     std::string asmStr =
         llvm::formatv("gmm.iter {0}, {1}",
@@ -399,17 +405,17 @@ struct ThreeMemrefOpLowering : public ConvertOpToLLVMPattern<OpTy> {
   }
 };
 
-struct LowerGmmMmOp : public ThreeMemrefOpLowering<Ada300HW_GmmMmOp> {
+struct LowerGmmMmOp : public ThreeMemrefOpLowering<GmmMmOp> {
   using ThreeMemrefOpLowering::ThreeMemrefOpLowering;
   StringRef mnemonic() const override { return "gmm.mm"; }
 };
 
-struct LowerGmmaMmOp : public ThreeMemrefOpLowering<Ada300HW_GmmaMmOp> {
+struct LowerGmmaMmOp : public ThreeMemrefOpLowering<GmmaMmOp> {
   using ThreeMemrefOpLowering::ThreeMemrefOpLowering;
   StringRef mnemonic() const override { return "gmma.mm"; }
 };
 
-struct LowerGmmaMtOp : public ThreeMemrefOpLowering<Ada300HW_GmmaMtOp> {
+struct LowerGmmaMtOp : public ThreeMemrefOpLowering<GmmaMtOp> {
   using ThreeMemrefOpLowering::ThreeMemrefOpLowering;
   StringRef mnemonic() const override { return "gmma.mt"; }
 };
@@ -446,17 +452,17 @@ struct ThreeMemrefMVOpLowering : public ConvertOpToLLVMPattern<OpTy> {
   }
 };
 
-struct LowerGmvMmOp : public ThreeMemrefMVOpLowering<Ada300HW_GmvMmOp> {
+struct LowerGmvMmOp : public ThreeMemrefMVOpLowering<GmvMmOp> {
   using ThreeMemrefMVOpLowering::ThreeMemrefMVOpLowering;
   StringRef mnemonic() const override { return "gmv.mm"; }
 };
 
-struct LowerGmvaMmOp : public ThreeMemrefMVOpLowering<Ada300HW_GmvaMmOp> {
+struct LowerGmvaMmOp : public ThreeMemrefMVOpLowering<GmvaMmOp> {
   using ThreeMemrefMVOpLowering::ThreeMemrefMVOpLowering;
   StringRef mnemonic() const override { return "gmva.mm"; }
 };
 
-struct LowerGmvaMtOp : public ThreeMemrefMVOpLowering<Ada300HW_GmvaMtOp> {
+struct LowerGmvaMtOp : public ThreeMemrefMVOpLowering<GmvaMtOp> {
   using ThreeMemrefMVOpLowering::ThreeMemrefMVOpLowering;
   StringRef mnemonic() const override { return "gmva.mt"; }
 };
@@ -465,12 +471,12 @@ struct LowerGmvaMtOp : public ThreeMemrefMVOpLowering<Ada300HW_GmvaMtOp> {
 // Synchronisation Op
 //===----------------------------------------------------------------------===//
 
-struct LowerTcsyncOp : public ConvertOpToLLVMPattern<Ada300HW_TcsyncOp> {
+struct LowerTcsyncOp : public ConvertOpToLLVMPattern<TcsyncOp> {
   using ConvertOpToLLVMPattern::ConvertOpToLLVMPattern;
 
   LogicalResult
-  matchAndRewrite(Ada300HW_TcsyncOp op,
-                  Ada300HW_TcsyncOp::Adaptor /*adaptor*/,
+  matchAndRewrite(TcsyncOp op,
+                  TcsyncOp::Adaptor /*adaptor*/,
                   ConversionPatternRewriter &rewriter) const override {
     emitSideEffectAsm(op.getLoc(), "tcsync", rewriter);
     rewriter.eraseOp(op);

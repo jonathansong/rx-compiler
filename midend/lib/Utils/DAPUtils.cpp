@@ -200,9 +200,8 @@ void iirVectorizationProcess(OpBuilder &rewriter, Location loc, uint64_t vecLen,
   uint64_t vecLenMinusOne = vecLen - 1;
   Value cUpperBound =
       rewriter.create<arith::ConstantIndexOp>(loc, vecLenMinusOne);
-  Value iUpperBound = rewriter.create<arith::ConstantIntOp>(
-      loc,
-      /*value=*/vecLenMinusOne, /*width=*/64);
+  Value iUpperBound =
+      rewriter.create<arith::ConstantIndexOp>(loc, vecLenMinusOne);
 
   auto SOSParams = dap::generateSOSParams(rewriter, loc, vectorTy, f0, f1, c0,
                                           c1, c2, c4, c5, filterSize, kernel);
