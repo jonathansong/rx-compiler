@@ -72,9 +72,7 @@ if model_path is None:
     model_path = "Qwen/Qwen3-0.6B"
 
 # Initialize the model from the specified model path.
-model = AutoModelForCausalLM.from_pretrained(
-    model_path, torchscript=True
-).eval()
+model = AutoModelForCausalLM.from_pretrained(model_path).eval().to(torch.float32)
 model.config.use_cache = False
 
 # Initialize Dynamo Compiler with specific configurations as an importer.
@@ -185,7 +183,7 @@ with open(
 ) as module_file:
     print(driver_prefill.construct_main_graph(True), file=module_file)
 all_param = numpy.concatenate(
-    [param.detach().numpy().reshape([-1]) for param in params]
+    [param.detach().to(torch.float32).numpy().reshape([-1]) for param in params]
 )
 all_param.tofile(os.path.join(output_dir, "arg0_0_6b.data"))
 

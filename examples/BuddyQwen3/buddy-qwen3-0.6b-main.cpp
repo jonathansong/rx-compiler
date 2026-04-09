@@ -29,7 +29,7 @@
 
 using namespace buddy;
 double total_time = 0;
-constexpr size_t ParamsSize = 751632448;
+constexpr size_t ParamsSize = 596049984;
 constexpr size_t MaxVocabSize = 151936;
 constexpr size_t MaxTokenLength = 1024;
 
@@ -157,32 +157,80 @@ struct MemRefContainer {
                 &kv48, &kv49, &kv50, &kv51, &kv52, &kv53, &kv54, &kv55} {}
 };
 
+/// MemRef subclass with public default constructor so it can be used as a
+/// plain struct member. Binary layout is identical to MemRef<T,N>.
+template <typename T, size_t N>
+struct MemRefInPlace : public MemRef<T, N> {
+  MemRefInPlace() : MemRef<T, N>() {}
+  MemRefInPlace &operator=(const MemRef<T, N> &other) {
+    MemRef<T, N>::operator=(other);
+    return *this;
+  }
+  MemRefInPlace &operator=(MemRef<T, N> &&other) {
+    MemRef<T, N>::operator=(std::move(other));
+    return *this;
+  }
+};
+static_assert(sizeof(MemRefInPlace<float, 4>) == sizeof(MemRef<float, 4>),
+              "MemRefInPlace<float,4> size mismatch");
+static_assert(sizeof(MemRefInPlace<long long, 1>) == sizeof(MemRef<long long, 1>),
+              "MemRefInPlace<long long,1> size mismatch");
+static_assert(sizeof(MemRefInPlace<float, 3>) == sizeof(MemRef<float, 3>),
+              "MemRefInPlace<float,3> size mismatch");
+
+/// Layer KV cache entry for decode: matches MLIR return order (idx, K, V).
+struct LayerKVEntry {
+  MemRefInPlace<long long, 1> idx;
+  MemRefInPlace<float, 4> K;
+  MemRefInPlace<float, 4> V;
+};
+static_assert(sizeof(LayerKVEntry) == 216, "LayerKVEntry size mismatch");
+
+/// Result container for the decode forward function.
+/// Layout must match forward_decode return type: (idx,K,V)x28 + logits.
+struct DecodeResultContainer {
+  LayerKVEntry layers[28];
+  MemRefInPlace<float, 3> logits;
+  // Convenience KV pointer array (not part of the MLIR ABI).
+  std::array<MemRef<float, 4> *, 56> kv_ptrs;
+};
+
 /// Declare Qwen3 forward function.
 extern "C" void _mlir_ciface_forward_prefill(MemRefContainer *result,
                                              MemRef<float, 1> *arg0,
                                              Text<size_t, 2> *arg1);
 
 extern "C" void _mlir_ciface_forward_decode(
-    MemRefContainer *result, MemRef<float, 1> *arg0, MemRef<long long, 2> *arg1,
-    MemRef<long long, 1> *arg2, MemRef<float, 4> *kv0, MemRef<float, 4> *kv1,
-    MemRef<float, 4> *kv2, MemRef<float, 4> *kv3, MemRef<float, 4> *kv4,
-    MemRef<float, 4> *kv5, MemRef<float, 4> *kv6, MemRef<float, 4> *kv7,
-    MemRef<float, 4> *kv8, MemRef<float, 4> *kv9, MemRef<float, 4> *kv10,
-    MemRef<float, 4> *kv11, MemRef<float, 4> *kv12, MemRef<float, 4> *kv13,
-    MemRef<float, 4> *kv14, MemRef<float, 4> *kv15, MemRef<float, 4> *kv16,
-    MemRef<float, 4> *kv17, MemRef<float, 4> *kv18, MemRef<float, 4> *kv19,
-    MemRef<float, 4> *kv20, MemRef<float, 4> *kv21, MemRef<float, 4> *kv22,
-    MemRef<float, 4> *kv23, MemRef<float, 4> *kv24, MemRef<float, 4> *kv25,
-    MemRef<float, 4> *kv26, MemRef<float, 4> *kv27, MemRef<float, 4> *kv28,
-    MemRef<float, 4> *kv29, MemRef<float, 4> *kv30, MemRef<float, 4> *kv31,
-    MemRef<float, 4> *kv32, MemRef<float, 4> *kv33, MemRef<float, 4> *kv34,
-    MemRef<float, 4> *kv35, MemRef<float, 4> *kv36, MemRef<float, 4> *kv37,
-    MemRef<float, 4> *kv38, MemRef<float, 4> *kv39, MemRef<float, 4> *kv40,
-    MemRef<float, 4> *kv41, MemRef<float, 4> *kv42, MemRef<float, 4> *kv43,
-    MemRef<float, 4> *kv44, MemRef<float, 4> *kv45, MemRef<float, 4> *kv46,
-    MemRef<float, 4> *kv47, MemRef<float, 4> *kv48, MemRef<float, 4> *kv49,
-    MemRef<float, 4> *kv50, MemRef<float, 4> *kv51, MemRef<float, 4> *kv52,
-    MemRef<float, 4> *kv53, MemRef<float, 4> *kv54, MemRef<float, 4> *kv55);
+    DecodeResultContainer *result, MemRef<float, 1> *arg0,
+    MemRef<long long, 2> *arg1, MemRef<long long, 1> *arg2,
+    MemRef<float, 4> *k0, MemRef<float, 4> *v0, MemRef<long long, 1> *idx0,
+    MemRef<float, 4> *k1, MemRef<float, 4> *v1, MemRef<long long, 1> *idx1,
+    MemRef<float, 4> *k2, MemRef<float, 4> *v2, MemRef<long long, 1> *idx2,
+    MemRef<float, 4> *k3, MemRef<float, 4> *v3, MemRef<long long, 1> *idx3,
+    MemRef<float, 4> *k4, MemRef<float, 4> *v4, MemRef<long long, 1> *idx4,
+    MemRef<float, 4> *k5, MemRef<float, 4> *v5, MemRef<long long, 1> *idx5,
+    MemRef<float, 4> *k6, MemRef<float, 4> *v6, MemRef<long long, 1> *idx6,
+    MemRef<float, 4> *k7, MemRef<float, 4> *v7, MemRef<long long, 1> *idx7,
+    MemRef<float, 4> *k8, MemRef<float, 4> *v8, MemRef<long long, 1> *idx8,
+    MemRef<float, 4> *k9, MemRef<float, 4> *v9, MemRef<long long, 1> *idx9,
+    MemRef<float, 4> *k10, MemRef<float, 4> *v10, MemRef<long long, 1> *idx10,
+    MemRef<float, 4> *k11, MemRef<float, 4> *v11, MemRef<long long, 1> *idx11,
+    MemRef<float, 4> *k12, MemRef<float, 4> *v12, MemRef<long long, 1> *idx12,
+    MemRef<float, 4> *k13, MemRef<float, 4> *v13, MemRef<long long, 1> *idx13,
+    MemRef<float, 4> *k14, MemRef<float, 4> *v14, MemRef<long long, 1> *idx14,
+    MemRef<float, 4> *k15, MemRef<float, 4> *v15, MemRef<long long, 1> *idx15,
+    MemRef<float, 4> *k16, MemRef<float, 4> *v16, MemRef<long long, 1> *idx16,
+    MemRef<float, 4> *k17, MemRef<float, 4> *v17, MemRef<long long, 1> *idx17,
+    MemRef<float, 4> *k18, MemRef<float, 4> *v18, MemRef<long long, 1> *idx18,
+    MemRef<float, 4> *k19, MemRef<float, 4> *v19, MemRef<long long, 1> *idx19,
+    MemRef<float, 4> *k20, MemRef<float, 4> *v20, MemRef<long long, 1> *idx20,
+    MemRef<float, 4> *k21, MemRef<float, 4> *v21, MemRef<long long, 1> *idx21,
+    MemRef<float, 4> *k22, MemRef<float, 4> *v22, MemRef<long long, 1> *idx22,
+    MemRef<float, 4> *k23, MemRef<float, 4> *v23, MemRef<long long, 1> *idx23,
+    MemRef<float, 4> *k24, MemRef<float, 4> *v24, MemRef<long long, 1> *idx24,
+    MemRef<float, 4> *k25, MemRef<float, 4> *v25, MemRef<long long, 1> *idx25,
+    MemRef<float, 4> *k26, MemRef<float, 4> *v26, MemRef<long long, 1> *idx26,
+    MemRef<float, 4> *k27, MemRef<float, 4> *v27, MemRef<long long, 1> *idx27);
 
 // -----------------------------------------------------------------------------
 // Helper Functions
@@ -257,7 +305,7 @@ int findMaxIndex(const float *start, const float *end) {
 }
 
 void copy_kv_by_cache_position_block(const MemRefContainer &prefill,
-                                     MemRefContainer &decode,
+                                     DecodeResultContainer &decode,
                                      int cache_position) {
   constexpr int num_kv = 56;
   int copy_len = std::min(cache_position, (int)MaxTokenLength);
@@ -416,21 +464,28 @@ int main() {
   inputContainerDecode.getData()[0] = (long long)maxIndex;
   outputContainer.appendTokenIdx(maxIndex);
 
-  MemRef<float, 3> logits_decode({1, 1, MaxVocabSize});
+  DecodeResultContainer decodeResultContainer;
+  for (int i = 0; i < 28; i++) {
+    decodeResultContainer.layers[i].K =
+        MemRef<float, 4>({1, HeadNum, MaxTokenLength, HiddenSize}, 0.0f);
+    decodeResultContainer.layers[i].V =
+        MemRef<float, 4>({1, HeadNum, MaxTokenLength, HiddenSize}, 0.0f);
+    decodeResultContainer.layers[i].idx = MemRef<long long, 1>({1}, 0LL);
+    decodeResultContainer.kv_ptrs[2 * i] = &decodeResultContainer.layers[i].K;
+    decodeResultContainer.kv_ptrs[2 * i + 1] =
+        &decodeResultContainer.layers[i].V;
+  }
+  decodeResultContainer.logits = MemRef<float, 3>({1, 1, MaxVocabSize});
 
-  MemRefContainer decodeResultContainer(
-      kv0, kv1, kv2, kv3, kv4, kv5, kv6, kv7, kv8, kv9, kv10, kv11, kv12, kv13,
-      kv14, kv15, kv16, kv17, kv18, kv19, kv20, kv21, kv22, kv23, kv24, kv25,
-      kv26, kv27, kv28, kv29, kv30, kv31, kv32, kv33, kv34, kv35, kv36, kv37,
-      kv38, kv39, kv40, kv41, kv42, kv43, kv44, kv45, kv46, kv47, kv48, kv49,
-      kv50, kv51, kv52, kv53, kv54, kv55, logits_decode);
-
-  MemRefContainer *ptrDecodeResultContainer = &decodeResultContainer;
+  DecodeResultContainer *ptrDecodeResultContainer = &decodeResultContainer;
 
   copy_kv_by_cache_position_block(prefillResultContainer, decodeResultContainer,
                                   inputContainerPrefill.getTokenCnt() + 1);
 
   cachePosition.getData()[0] = inputContainerPrefill.getTokenCnt() + 1;
+  for (int i = 0; i < 28; i++)
+    decodeResultContainer.layers[i].idx.getData()[0] =
+        cachePosition.getData()[0];
   int generateLen = MaxTokenLength - inputContainerPrefill.getTokenCnt();
   double decodeTimeAccumMs = 0.0;
   size_t decodeTokens = 0;
@@ -438,35 +493,91 @@ int main() {
     const auto inferenceStart = std::chrono::high_resolution_clock::now();
     _mlir_ciface_forward_decode(
         ptrDecodeResultContainer, &ParamsContainer, &inputContainerDecode,
-        &cachePosition, &ptrDecodeResultContainer->kv0,
-        &ptrDecodeResultContainer->kv1, &ptrDecodeResultContainer->kv2,
-        &ptrDecodeResultContainer->kv3, &ptrDecodeResultContainer->kv4,
-        &ptrDecodeResultContainer->kv5, &ptrDecodeResultContainer->kv6,
-        &ptrDecodeResultContainer->kv7, &ptrDecodeResultContainer->kv8,
-        &ptrDecodeResultContainer->kv9, &ptrDecodeResultContainer->kv10,
-        &ptrDecodeResultContainer->kv11, &ptrDecodeResultContainer->kv12,
-        &ptrDecodeResultContainer->kv13, &ptrDecodeResultContainer->kv14,
-        &ptrDecodeResultContainer->kv15, &ptrDecodeResultContainer->kv16,
-        &ptrDecodeResultContainer->kv17, &ptrDecodeResultContainer->kv18,
-        &ptrDecodeResultContainer->kv19, &ptrDecodeResultContainer->kv20,
-        &ptrDecodeResultContainer->kv21, &ptrDecodeResultContainer->kv22,
-        &ptrDecodeResultContainer->kv23, &ptrDecodeResultContainer->kv24,
-        &ptrDecodeResultContainer->kv25, &ptrDecodeResultContainer->kv26,
-        &ptrDecodeResultContainer->kv27, &ptrDecodeResultContainer->kv28,
-        &ptrDecodeResultContainer->kv29, &ptrDecodeResultContainer->kv30,
-        &ptrDecodeResultContainer->kv31, &ptrDecodeResultContainer->kv32,
-        &ptrDecodeResultContainer->kv33, &ptrDecodeResultContainer->kv34,
-        &ptrDecodeResultContainer->kv35, &ptrDecodeResultContainer->kv36,
-        &ptrDecodeResultContainer->kv37, &ptrDecodeResultContainer->kv38,
-        &ptrDecodeResultContainer->kv39, &ptrDecodeResultContainer->kv40,
-        &ptrDecodeResultContainer->kv41, &ptrDecodeResultContainer->kv42,
-        &ptrDecodeResultContainer->kv43, &ptrDecodeResultContainer->kv44,
-        &ptrDecodeResultContainer->kv45, &ptrDecodeResultContainer->kv46,
-        &ptrDecodeResultContainer->kv47, &ptrDecodeResultContainer->kv48,
-        &ptrDecodeResultContainer->kv49, &ptrDecodeResultContainer->kv50,
-        &ptrDecodeResultContainer->kv51, &ptrDecodeResultContainer->kv52,
-        &ptrDecodeResultContainer->kv53, &ptrDecodeResultContainer->kv54,
-        &ptrDecodeResultContainer->kv55);
+        &cachePosition,
+        &ptrDecodeResultContainer->layers[0].K,
+        &ptrDecodeResultContainer->layers[0].V,
+        &ptrDecodeResultContainer->layers[0].idx,
+        &ptrDecodeResultContainer->layers[1].K,
+        &ptrDecodeResultContainer->layers[1].V,
+        &ptrDecodeResultContainer->layers[1].idx,
+        &ptrDecodeResultContainer->layers[2].K,
+        &ptrDecodeResultContainer->layers[2].V,
+        &ptrDecodeResultContainer->layers[2].idx,
+        &ptrDecodeResultContainer->layers[3].K,
+        &ptrDecodeResultContainer->layers[3].V,
+        &ptrDecodeResultContainer->layers[3].idx,
+        &ptrDecodeResultContainer->layers[4].K,
+        &ptrDecodeResultContainer->layers[4].V,
+        &ptrDecodeResultContainer->layers[4].idx,
+        &ptrDecodeResultContainer->layers[5].K,
+        &ptrDecodeResultContainer->layers[5].V,
+        &ptrDecodeResultContainer->layers[5].idx,
+        &ptrDecodeResultContainer->layers[6].K,
+        &ptrDecodeResultContainer->layers[6].V,
+        &ptrDecodeResultContainer->layers[6].idx,
+        &ptrDecodeResultContainer->layers[7].K,
+        &ptrDecodeResultContainer->layers[7].V,
+        &ptrDecodeResultContainer->layers[7].idx,
+        &ptrDecodeResultContainer->layers[8].K,
+        &ptrDecodeResultContainer->layers[8].V,
+        &ptrDecodeResultContainer->layers[8].idx,
+        &ptrDecodeResultContainer->layers[9].K,
+        &ptrDecodeResultContainer->layers[9].V,
+        &ptrDecodeResultContainer->layers[9].idx,
+        &ptrDecodeResultContainer->layers[10].K,
+        &ptrDecodeResultContainer->layers[10].V,
+        &ptrDecodeResultContainer->layers[10].idx,
+        &ptrDecodeResultContainer->layers[11].K,
+        &ptrDecodeResultContainer->layers[11].V,
+        &ptrDecodeResultContainer->layers[11].idx,
+        &ptrDecodeResultContainer->layers[12].K,
+        &ptrDecodeResultContainer->layers[12].V,
+        &ptrDecodeResultContainer->layers[12].idx,
+        &ptrDecodeResultContainer->layers[13].K,
+        &ptrDecodeResultContainer->layers[13].V,
+        &ptrDecodeResultContainer->layers[13].idx,
+        &ptrDecodeResultContainer->layers[14].K,
+        &ptrDecodeResultContainer->layers[14].V,
+        &ptrDecodeResultContainer->layers[14].idx,
+        &ptrDecodeResultContainer->layers[15].K,
+        &ptrDecodeResultContainer->layers[15].V,
+        &ptrDecodeResultContainer->layers[15].idx,
+        &ptrDecodeResultContainer->layers[16].K,
+        &ptrDecodeResultContainer->layers[16].V,
+        &ptrDecodeResultContainer->layers[16].idx,
+        &ptrDecodeResultContainer->layers[17].K,
+        &ptrDecodeResultContainer->layers[17].V,
+        &ptrDecodeResultContainer->layers[17].idx,
+        &ptrDecodeResultContainer->layers[18].K,
+        &ptrDecodeResultContainer->layers[18].V,
+        &ptrDecodeResultContainer->layers[18].idx,
+        &ptrDecodeResultContainer->layers[19].K,
+        &ptrDecodeResultContainer->layers[19].V,
+        &ptrDecodeResultContainer->layers[19].idx,
+        &ptrDecodeResultContainer->layers[20].K,
+        &ptrDecodeResultContainer->layers[20].V,
+        &ptrDecodeResultContainer->layers[20].idx,
+        &ptrDecodeResultContainer->layers[21].K,
+        &ptrDecodeResultContainer->layers[21].V,
+        &ptrDecodeResultContainer->layers[21].idx,
+        &ptrDecodeResultContainer->layers[22].K,
+        &ptrDecodeResultContainer->layers[22].V,
+        &ptrDecodeResultContainer->layers[22].idx,
+        &ptrDecodeResultContainer->layers[23].K,
+        &ptrDecodeResultContainer->layers[23].V,
+        &ptrDecodeResultContainer->layers[23].idx,
+        &ptrDecodeResultContainer->layers[24].K,
+        &ptrDecodeResultContainer->layers[24].V,
+        &ptrDecodeResultContainer->layers[24].idx,
+        &ptrDecodeResultContainer->layers[25].K,
+        &ptrDecodeResultContainer->layers[25].V,
+        &ptrDecodeResultContainer->layers[25].idx,
+        &ptrDecodeResultContainer->layers[26].K,
+        &ptrDecodeResultContainer->layers[26].V,
+        &ptrDecodeResultContainer->layers[26].idx,
+        &ptrDecodeResultContainer->layers[27].K,
+        &ptrDecodeResultContainer->layers[27].V,
+        &ptrDecodeResultContainer->layers[27].idx);
 
     const auto inferenceEnd = std::chrono::high_resolution_clock::now();
     const std::chrono::duration<double, std::milli> inferenceTime =
