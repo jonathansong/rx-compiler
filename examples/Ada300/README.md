@@ -207,8 +207,16 @@ subgraph0.mlir  (linalg.matmul + math.exp + math.sqrt, tensor level)
   │    clean identity-layout operands.
   │
   │  Stage 4a – math-to-ada300hl
-  │    math.exp  (scalar)  →  ada300hl.pwnl {func=exp,  segments=16}
-  │    math.sqrt (scalar)  →  ada300hl.pwnl {func=sqrt, segments=16}
+  │    Handles two forms:
+  │    (1) Top-level vector-typed math ops:
+  │          math.exp  %vec  →  ada300hl.pwnl {func=exp,  segments=16}
+  │          math.sqrt %vec  →  ada300hl.pwnl {func=sqrt, segments=16}
+  │    (2) linalg.generic whose body is a single scalar math op (elementwise):
+  │          linalg.generic { math.exp  %scalar }
+  │            →  vector.transfer_read + ada300hl.pwnl + vector.transfer_write
+  │          linalg.generic { math.sqrt %scalar }
+  │            →  vector.transfer_read + ada300hl.pwnl + vector.transfer_write
+  │    Both exp, log, sqrt, and rsqrt are supported in both forms.
   │
   │  Stage 4b – linalg-to-ada300hl
   │    linalg.matmul →  ada300hl.copy_to_sram  %A, %A_sram
