@@ -41,8 +41,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Utils/StructuredOpsUtils.h"
+#include "mlir/Dialect/Vector/IR/VectorOps.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -163,6 +168,115 @@ struct MathRsqrtToAda300HLPwnl : public OpRewritePattern<math::RsqrtOp> {
 } // namespace
 
 //===----------------------------------------------------------------------===//
+// Pattern: linalg.generic { scalar MathOp } → transfer_read + pwnl + write
+//
+// Matches elementwise linalg.generic ops whose body contains exactly one
+// scalar math op (exp, log, sqrt, rsqrt) and rewrites the whole generic into
+// a flat vector read + ada300hl.pwnl + vector write, which is the form the
+// Ada300 vector unit expects.
+//
+// Requirements on the matched linalg.generic:
+//   - All iterator types are parallel.
+//   - Exactly 1 DPS input and 1 DPS init (in-place: input == output buffer).
+//   - The input/output memref has a static shape.
+//   - Region body: ^bb0(%in, %out): %r = MathOp %in; linalg.yield %r
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+/// Helper: try to cast Value to MemRefType with fully static shape.
+static MemRefType getStaticMemRefType(Value v) {
+  auto ty = dyn_cast<MemRefType>(v.getType());
+  if (!ty || !ty.hasStaticShape())
+    return {};
+  return ty;
+}
+
+template <typename MathOp>
+struct LinalgGenericMathToAda300HLPwnl
+    : public OpRewritePattern<linalg::GenericOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  NonlinearFunc func;
+  explicit LinalgGenericMathToAda300HLPwnl(MLIRContext *ctx, NonlinearFunc f)
+      : OpRewritePattern<linalg::GenericOp>(ctx), func(f) {}
+
+  LogicalResult matchAndRewrite(linalg::GenericOp op,
+                                PatternRewriter &rewriter) const override {
+    // All iterators must be parallel.
+    if (!llvm::all_of(op.getIteratorTypesArray(), [](utils::IteratorType t) {
+          return t == utils::IteratorType::parallel;
+        }))
+      return failure();
+
+    // Exactly 1 input and 1 in-place output.
+    if (op.getNumDpsInputs() != 1 || op.getNumDpsInits() != 1)
+      return failure();
+
+    Value input = op.getDpsInputOperand(0)->get();
+    Value output = op.getDpsInitOperand(0)->get();
+
+    MemRefType inputTy = getStaticMemRefType(input);
+    MemRefType outputTy = getStaticMemRefType(output);
+    if (!inputTy || !outputTy)
+      return failure();
+
+    // Input and output element types must match and be floating-point.
+    if (inputTy.getElementType() != outputTy.getElementType())
+      return failure();
+    if (!isa<FloatType>(inputTy.getElementType()))
+      return failure();
+
+    // Body: ^bb0(%in, %out): %r = MathOp %in; linalg.yield %r
+    Block &body = op.getRegion().front();
+    if (body.getOperations().size() != 2)
+      return failure();
+    auto mathOp = dyn_cast<MathOp>(body.front());
+    if (!mathOp || mathOp.getOperand() != body.getArgument(0))
+      return failure();
+    auto yieldOp = cast<linalg::YieldOp>(body.back());
+    if (yieldOp.getValues().size() != 1 ||
+        yieldOp.getValues()[0] != mathOp.getResult())
+      return failure();
+
+    // Build flat vector type: vector<NxelemTy> where N = total element count.
+    int64_t numElems = 1;
+    for (int64_t d : inputTy.getShape())
+      numElems *= d;
+    auto vecTy =
+        VectorType::get({numElems}, inputTy.getElementType());
+
+    Location loc = op.getLoc();
+
+    // Zero indices for transfer_read/write.
+    SmallVector<Value> zeros(
+        inputTy.getRank(),
+        rewriter.create<arith::ConstantIndexOp>(loc, 0));
+
+    // Padding value (zero) required by transfer_read.
+    Value pad = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getZeroAttr(inputTy.getElementType()));
+
+    // vector.transfer_read from input.
+    Value vec =
+        rewriter.create<vector::TransferReadOp>(loc, vecTy, input, zeros, pad);
+
+    // ada300hl.pwnl on the vector.
+    auto funcAttr = NonlinearFuncAttr::get(rewriter.getContext(), func);
+    Value result = rewriter.create<PwnlOp>(loc, vecTy, vec, funcAttr,
+                                           defaultSegments(rewriter.getContext()));
+
+    // vector.transfer_write to output.
+    rewriter.create<vector::TransferWriteOp>(loc, result, output, zeros);
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+} // namespace
+
+//===----------------------------------------------------------------------===//
 // Pass definition
 //===----------------------------------------------------------------------===//
 
@@ -185,7 +299,10 @@ struct MathToAda300HLPass
 
   void getDependentDialects(DialectRegistry &registry) const override {
     registry.insert<Ada300HLDialect>();
+    registry.insert<arith::ArithDialect>();
+    registry.insert<linalg::LinalgDialect>();
     registry.insert<math::MathDialect>();
+    registry.insert<vector::VectorDialect>();
   }
 
   void runOnOperation() override {
@@ -199,6 +316,14 @@ struct MathToAda300HLPass
         MathSqrtToAda300HLPwnl,
         MathRsqrtToAda300HLPwnl
     >(ctx);
+    patterns.add<LinalgGenericMathToAda300HLPwnl<math::ExpOp>>(
+        ctx, NonlinearFunc::exp);
+    patterns.add<LinalgGenericMathToAda300HLPwnl<math::LogOp>>(
+        ctx, NonlinearFunc::log);
+    patterns.add<LinalgGenericMathToAda300HLPwnl<math::SqrtOp>>(
+        ctx, NonlinearFunc::sqrt);
+    patterns.add<LinalgGenericMathToAda300HLPwnl<math::RsqrtOp>>(
+        ctx, NonlinearFunc::rsqrt);
 
     if (failed(applyPatternsAndFoldGreedily(func, std::move(patterns))))
       signalPassFailure();

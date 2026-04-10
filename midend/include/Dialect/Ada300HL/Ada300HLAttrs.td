@@ -69,8 +69,8 @@ def Ada300HL_NonlinearFuncAttr :
 // Only these two values are legal per the ADA300 ISA specification.
 //===----------------------------------------------------------------------===//
 
-def Ada300HL_Seg_16 : I32EnumAttrCase<"seg16", 16, "16">;
-def Ada300HL_Seg_32 : I32EnumAttrCase<"seg32", 32, "32">;
+def Ada300HL_Seg_16 : I32EnumAttrCase<"seg16", 16>;
+def Ada300HL_Seg_32 : I32EnumAttrCase<"seg32", 32>;
 
 def Ada300HL_SegmentCountEnum : I32EnumAttr<"SegmentCount",
     "Number of PWL approximation segments (must be 16 or 32)",

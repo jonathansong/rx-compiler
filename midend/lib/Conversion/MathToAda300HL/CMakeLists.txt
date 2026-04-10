@@ -9,7 +9,11 @@ add_mlir_library(MathToAda300HLPass
   BuddyAda300HL
   MLIRIR
   MLIRPass
+  MLIRArithDialect
   MLIRFuncDialect
+  MLIRLinalgDialect
   MLIRMathDialect
+  MLIRMemRefDialect
   MLIRTransformUtils
+  MLIRVectorDialect
 )
