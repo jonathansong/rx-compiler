@@ -144,10 +144,13 @@ struct LinalgMatmulToAda300HLTensorMma
     auto mkI32 = [&](int32_t v) { return rewriter.getI32IntegerAttr(v); };
 
     // --- Allocate SRAM staging buffers -----------------------------------
-    // Use the same element type and shape as the inputs; the address space
-    // will be reconciled in a later memory-planning pass.
-    Value aSram = rewriter.create<memref::AllocOp>(loc, aTy);
-    Value bSram = rewriter.create<memref::AllocOp>(loc, bTy);
+    // Use identity-layout memrefs for the SRAM buffers: memref.alloc cannot
+    // carry dynamic strides/offsets (that would require symbol operands).
+    // CopyToSramOp handles the layout conversion from strided inputs.
+    auto aTyFlat = MemRefType::get(aTy.getShape(), aTy.getElementType());
+    auto bTyFlat = MemRefType::get(bTy.getShape(), bTy.getElementType());
+    Value aSram = rewriter.create<memref::AllocOp>(loc, aTyFlat);
+    Value bSram = rewriter.create<memref::AllocOp>(loc, bTyFlat);
 
     // --- Copy A and B into SRAM ------------------------------------------
     rewriter.create<CopyToSramOp>(loc, A, aSram);
