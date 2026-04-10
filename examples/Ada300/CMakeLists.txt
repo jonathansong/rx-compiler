@@ -232,7 +232,11 @@ add_custom_command(
   VERBATIM
 )
 
-# Stage 4a: math.exp / math.sqrt → ada300hl.pwnl
+# Stage 4a: lower math.exp / math.sqrt → ada300hl.pwnl.
+#   math-to-ada300hl handles both vector-typed math ops (top-level) and
+#   linalg.generic ops whose body is a single scalar math op (elementwise).
+#   The latter are rewritten to: vector.transfer_read + ada300hl.pwnl +
+#   vector.transfer_write, vectorizing the entire generic in-place.
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage4a_ada300hl_math.mlir
   COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage3_normalized.mlir
