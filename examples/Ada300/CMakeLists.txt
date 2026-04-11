@@ -50,14 +50,20 @@
 # ===---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Dump directory – all generated MLIR/data files are written here.
+# ---------------------------------------------------------------------------
+set(ADA300_DUMP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/output)
+file(MAKE_DIRECTORY ${ADA300_DUMP_DIR})
+
+# ---------------------------------------------------------------------------
 # Step 1: Import – run the Python importer to generate MLIR and parameters
 # ---------------------------------------------------------------------------
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/subgraph0.mlir
-         ${CMAKE_CURRENT_BINARY_DIR}/forward.mlir
-         ${CMAKE_CURRENT_BINARY_DIR}/arg0.data
+  OUTPUT ${ADA300_DUMP_DIR}/subgraph0.mlir
+         ${ADA300_DUMP_DIR}/forward.mlir
+         ${ADA300_DUMP_DIR}/arg0.data
   COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ada300-import.py
-          --output-dir ${CMAKE_CURRENT_BINARY_DIR}
+          --output-dir ${ADA300_DUMP_DIR}
   COMMENT "Ada300: tracing model and generating subgraph0.mlir, forward.mlir, arg0.data"
   VERBATIM
 )
@@ -74,7 +80,7 @@ add_custom_command(
 # ---------------------------------------------------------------------------
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/subgraph0.o
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/subgraph0.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/subgraph0.mlir
             -one-shot-bufferize="bufferize-function-boundaries"
             -ownership-based-buffer-deallocation
             -buffer-deallocation-simplification
@@ -95,7 +101,7 @@ add_custom_command(
           ${LLVM_TOOLS_BINARY_DIR}/llvm-as |
           ${LLVM_TOOLS_BINARY_DIR}/llc -filetype=obj -relocation-model=pic -O3
             -o ${CMAKE_CURRENT_BINARY_DIR}/subgraph0.o
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/subgraph0.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/subgraph0.mlir
           buddy-opt
   COMMENT "Ada300: lowering subgraph0.mlir → subgraph0.o (generic path)"
   VERBATIM
@@ -186,11 +192,11 @@ add_custom_command(
 set(ADA300_TOSA_PIPELINE
     "builtin.module(func.func(tosa-to-linalg-named,tosa-to-linalg,tosa-to-tensor,tosa-to-arith),convert-elementwise-to-linalg)")
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage1_elementwise.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/subgraph0.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage1_elementwise.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/subgraph0.mlir
             -pass-pipeline=${ADA300_TOSA_PIPELINE}
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage1_elementwise.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/subgraph0.mlir
+            -o ${ADA300_DUMP_DIR}/stage1_elementwise.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/subgraph0.mlir
           buddy-opt
   COMMENT "Ada300 Stage 1: tosa-to-linalg + convert-elementwise-to-linalg → stage1_elementwise.mlir"
   VERBATIM
@@ -198,14 +204,14 @@ add_custom_command(
 
 # Stage 2: bufferize – all tensors become memrefs
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage2_bufferized.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage1_elementwise.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage2_bufferized.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage1_elementwise.mlir
             -one-shot-bufferize="bufferize-function-boundaries"
             -ownership-based-buffer-deallocation
             -buffer-deallocation-simplification
             -bufferization-lower-deallocations
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage2_bufferized.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage1_elementwise.mlir
+            -o ${ADA300_DUMP_DIR}/stage2_bufferized.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/stage1_elementwise.mlir
           buddy-opt
   COMMENT "Ada300 Stage 2: one-shot-bufferize → stage2_bufferized.mlir"
   VERBATIM
@@ -220,13 +226,13 @@ add_custom_command(
 #                        into plain memrefs + explicit index arithmetic, so all
 #                        memrefs reaching the Ada300HL passes have identity layout.
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage3_normalized.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage2_bufferized.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage3_normalized.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage2_bufferized.mlir
             -canonicalize
             -cse
             -normalize-memrefs
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage3_normalized.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage2_bufferized.mlir
+            -o ${ADA300_DUMP_DIR}/stage3_normalized.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/stage2_bufferized.mlir
           buddy-opt
   COMMENT "Ada300 Stage 3: canonicalize + normalize-memrefs → stage3_normalized.mlir"
   VERBATIM
@@ -238,11 +244,11 @@ add_custom_command(
 #   The latter are rewritten to: vector.transfer_read + ada300hl.pwnl +
 #   vector.transfer_write, vectorizing the entire generic in-place.
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage4a_ada300hl_math.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage3_normalized.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage4a_ada300hl_math.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage3_normalized.mlir
             -math-to-ada300hl
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage4a_ada300hl_math.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage3_normalized.mlir
+            -o ${ADA300_DUMP_DIR}/stage4a_ada300hl_math.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/stage3_normalized.mlir
           buddy-opt
   COMMENT "Ada300 Stage 4a: math-to-ada300hl → stage4a_ada300hl_math.mlir"
   VERBATIM
@@ -250,11 +256,11 @@ add_custom_command(
 
 # Stage 4b: bufferized linalg.matmul → ada300hl.tensor_mma
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage4b_ada300hl_matmul.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage4a_ada300hl_math.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage4b_ada300hl_matmul.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage4a_ada300hl_math.mlir
             -linalg-to-ada300hl
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage4b_ada300hl_matmul.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage4a_ada300hl_math.mlir
+            -o ${ADA300_DUMP_DIR}/stage4b_ada300hl_matmul.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/stage4a_ada300hl_math.mlir
           buddy-opt
   COMMENT "Ada300 Stage 4b: linalg-to-ada300hl → stage4b_ada300hl_matmul.mlir"
   VERBATIM
@@ -264,11 +270,11 @@ add_custom_command(
 #   ada300hl.pwnl       → ada300hw.vfpwnl
 #   ada300hl.tensor_mma → ada300hw.set_gmm_cfg / gmma_mm / tcsync
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage5_ada300hw.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage4b_ada300hl_matmul.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage5_ada300hw.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage4b_ada300hl_matmul.mlir
             -lower-ada300hl-to-ada300hw
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage5_ada300hw.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage4b_ada300hl_matmul.mlir
+            -o ${ADA300_DUMP_DIR}/stage5_ada300hw.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/stage4b_ada300hl_matmul.mlir
           buddy-opt
   COMMENT "Ada300 Stage 5: lower-ada300hl-to-ada300hw → stage5_ada300hw.mlir"
   VERBATIM
@@ -279,11 +285,11 @@ add_custom_command(
 #   ada300hw.gmma_mm → llvm.inline_asm "gmma.mm $0, $1, $2"
 #   ada300hw.tcsync  → llvm.inline_asm "tcsync"
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage6_llvm_dialect.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage5_ada300hw.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage6_llvm_dialect.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage5_ada300hw.mlir
             -lower-ada300hw-to-llvm
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage6_llvm_dialect.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage5_ada300hw.mlir
+            -o ${ADA300_DUMP_DIR}/stage6_llvm_dialect.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/stage5_ada300hw.mlir
           buddy-opt
   COMMENT "Ada300 Stage 6: lower-ada300hw-to-llvm → stage6_llvm_dialect.mlir"
   VERBATIM
@@ -291,8 +297,8 @@ add_custom_command(
 
 # Stage 7: standard finishing passes – produce fully lowered LLVM dialect MLIR
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/stage7_finished.mlir
-  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/stage6_llvm_dialect.mlir
+  OUTPUT ${ADA300_DUMP_DIR}/stage7_finished.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage6_llvm_dialect.mlir
             -convert-linalg-to-loops
             -expand-strided-metadata
             -lower-affine
@@ -305,8 +311,8 @@ add_custom_command(
             -finalize-memref-to-llvm
             -convert-func-to-llvm
             -reconcile-unrealized-casts
-            -o ${CMAKE_CURRENT_BINARY_DIR}/stage7_finished.mlir
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage6_llvm_dialect.mlir
+            -o ${ADA300_DUMP_DIR}/stage7_finished.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/stage6_llvm_dialect.mlir
           buddy-opt
   COMMENT "Ada300 Stage 7: finishing passes → stage7_finished.mlir"
   VERBATIM
@@ -314,28 +320,28 @@ add_custom_command(
 
 # Translate the finished LLVM dialect MLIR → LLVM IR text (.ll)
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.ll
+  OUTPUT ${ADA300_DUMP_DIR}/subgraph0_ada300.ll
   COMMAND ${LLVM_TOOLS_BINARY_DIR}/mlir-translate
-            ${CMAKE_CURRENT_BINARY_DIR}/stage7_finished.mlir
+            ${ADA300_DUMP_DIR}/stage7_finished.mlir
             -mlir-to-llvmir
-            -o ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.ll
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/stage7_finished.mlir
+            -o ${ADA300_DUMP_DIR}/subgraph0_ada300.ll
+  DEPENDS ${ADA300_DUMP_DIR}/stage7_finished.mlir
   COMMENT "Ada300: mlir-translate → subgraph0_ada300.ll (LLVM IR)"
   VERBATIM
 )
 
 # Assemble the Ada300-lowered LLVM IR into an object file
 add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.o
+  OUTPUT ${ADA300_DUMP_DIR}/subgraph0_ada300.o
   COMMAND ${LLVM_TOOLS_BINARY_DIR}/llvm-as
-            ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.ll
-            -o ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.bc &&
+            ${ADA300_DUMP_DIR}/subgraph0_ada300.ll
+            -o ${ADA300_DUMP_DIR}/subgraph0_ada300.bc &&
           ${LLVM_TOOLS_BINARY_DIR}/llc
             -filetype=obj -relocation-model=pic -O3
             -march=riscv64 -mattr=+v
-            ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.bc
-            -o ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.o
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.ll
+            ${ADA300_DUMP_DIR}/subgraph0_ada300.bc
+            -o ${ADA300_DUMP_DIR}/subgraph0_ada300.o
+  DEPENDS ${ADA300_DUMP_DIR}/subgraph0_ada300.ll
   COMMENT "Ada300: assembling subgraph0_ada300.ll → subgraph0_ada300.o (RISC-V + BuddyExt)"
   VERBATIM
 )
@@ -348,7 +354,7 @@ add_custom_command(
 # ---------------------------------------------------------------------------
 add_custom_command(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/forward.o
-  COMMAND ${LLVM_TOOLS_BINARY_DIR}/mlir-opt ${CMAKE_CURRENT_BINARY_DIR}/forward.mlir
+  COMMAND ${LLVM_TOOLS_BINARY_DIR}/mlir-opt ${ADA300_DUMP_DIR}/forward.mlir
             -pass-pipeline
             "builtin.module(func.func(tosa-to-linalg-named, tosa-to-linalg,
              tosa-to-tensor, tosa-to-arith), empty-tensor-to-alloc-tensor,
@@ -367,7 +373,7 @@ add_custom_command(
           ${LLVM_TOOLS_BINARY_DIR}/llvm-as |
           ${LLVM_TOOLS_BINARY_DIR}/llc -filetype=obj -relocation-model=pic -O3
             -o ${CMAKE_CURRENT_BINARY_DIR}/forward.o
-  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/forward.mlir
+  DEPENDS ${ADA300_DUMP_DIR}/forward.mlir
   COMMENT "Ada300: lowering forward.mlir → forward.o"
   VERBATIM
 )
@@ -395,7 +401,7 @@ add_custom_target(ada300-import
 # ---------------------------------------------------------------------------
 add_custom_target(ada300-lower
   DEPENDS
-    ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.ll
+    ${ADA300_DUMP_DIR}/subgraph0_ada300.ll
     ${CMAKE_CURRENT_BINARY_DIR}/forward.o
   COMMENT "Ada300: Ada300HL/Ada300HW lowering complete (LLVM IR stage)"
 )
@@ -407,7 +413,7 @@ add_custom_target(ada300-lower
 # ---------------------------------------------------------------------------
 add_custom_target(ada300-assemble
   DEPENDS
-    ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_ada300.o
+    ${ADA300_DUMP_DIR}/subgraph0_ada300.o
     ${CMAKE_CURRENT_BINARY_DIR}/forward.o
   COMMENT "Ada300: assembling LLVM IR → object files (requires Ada300-enabled toolchain)"
 )
