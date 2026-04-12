@@ -228,6 +228,9 @@ ISA-level instructions one-to-one.
 | `alignedPtrFromMemref(llvmMemref, builder)` | Extracts field 1 (aligned ptr) from a memref descriptor struct, or returns the value directly for bare-pointer convention |
 | `ptrToI64(ptr, builder)` | Emits `ptrtoint ptr to i64` |
 | `memrefToI64(llvmMemref, builder)` | Combines aligned-ptr extraction + ptrtoint |
+| `lookupValueThroughCast(val, moduleTranslation)` | Traces `unrealized_conversion_cast` chains to recover the already-translated `!llvm.struct` value for memref operands (see §Cast Handling below) |
+| `valToVecAddr(val, builder)` | Gets an `i64` address for a vector intrinsic operand: if the value is a pointer, does `ptrtoint`; if it is a vector register, spills to a stack `alloca` and returns the slot address as `i64` |
+| `vecAddrToVal(addrI64, vecTy, builder)` | Loads a result vector from the `i64` output address returned by a vector intrinsic: `inttoptr + load(vecTy)` |
 
 ### Translation logic per op group
 
@@ -256,15 +259,28 @@ ada300hw.gmm_mm %dst, %act, %wht  ──►  %d = ptrtoint ptr %dst.aligned to i
 
 #### Vector ops
 
-Vector operands are passed as pointer-to-i64 casts (placeholder convention).
-Enum attributes become `i64` constants.  The intrinsic result (an `i64` address)
-is mapped back to the MLIR result SSA value:
+Vector operands arrive from MLIR as `vector<128xf32>` types.  After
+`finalize-memref-to-llvm` and LLVM translation they become LLVM
+`<128 x float>` register values — not pointers.  The Ada300 vector
+intrinsics take `i64` base addresses, so the translation:
+
+1. **Spills** the input vector to a stack `alloca` and passes the alloca
+   address as an `i64` (`valToVecAddr`).
+2. Calls the intrinsic, which returns the `i64` output address where the
+   hardware wrote the result.
+3. **Loads** the result vector back from that address so the MLIR result
+   SSA value has the expected `vector<N x float>` type, matching the type
+   expected by downstream `llvm.store` users (`vecAddrToVal`).
 
 ```
-%y = ada300hw.vfpwnl %x {func=exp, segments=16}  ──►  %xi = ptrtoint ptr %x to i64
-                                                         %yi = call i64 @llvm.riscv.ada300_vfpwnl(
-                                                                   i64 %xi, i64 0, i64 16)
-                                                         ; mapValue(%y, %yi)
+%y = ada300hw.vfpwnl %x {func=exp, segments=16}  ──►
+  %slot = alloca <128 x float>          ; spill input to stack
+  store <128 x float> %x, ptr %slot
+  %xi = ptrtoint ptr %slot to i64
+  %yi_addr = call i64 @llvm.riscv.ada300_vfpwnl(i64 %xi, i64 0, i64 16)
+  %yi_ptr = inttoptr i64 %yi_addr to ptr
+  %y = load <128 x float>, ptr %yi_ptr  ; reload result as vector
+  ; mapValue(%y_mlir, %y)
 ```
 
 #### Sync op
@@ -310,12 +326,75 @@ add_mlir_translation_library(BuddyAda300HWToLLVMIRTranslation
 | `backend/include/llvm/IR/IntrinsicsBuddyExt.td` | `include "IntrinsicsRISCVAda300HW.td"` |
 | `backend/llvm/lib/Target/RISCV/RISCVInstrInfoBuddyExt.td` | `include "RISCVInstrInfoAda300HW.td"` |
 | `midend/lib/Target/LLVMIR/Dialect/CMakeLists.txt` | `add_subdirectory(Ada300HW)` |
-| `midend/lib/Target/LLVMIR/ConvertBuddyToLLVMIR.cpp` | include header + `registerAda300HWDialectTranslation(registry)` |
+| `midend/lib/Target/LLVMIR/ConvertBuddyToLLVMIR.cpp` | include header + `registerAda300HWDialectTranslation(registry)` called **first** (before `registerAllToLLVMIRTranslations`) to win the `BuiltinDialect` interface slot |
 | `midend/lib/Target/LLVMIR/CMakeLists.txt` | `BuddyAda300HWToLLVMIRTranslation` in `LINK_LIBS` |
+
+### Example build targets (`examples/Ada300/CMakeLists.txt`)
+
+Guarded by `if(BUDDY_ADA300_ISA_BACKEND)` (enabled by default when
+`BUDDY_ADA300_EXAMPLES=ON`):
+
+| Target | Output | Command |
+|---|---|---|
+| `ada300-isa` | `output/subgraph0_isa.o` | `buddy-llc -filetype=obj -mtriple=riscv64 -mattr=+buddyext,+v -float-abi=hard -O3` |
+| `ada300-asm` | `output/subgraph0_isa.s` | `buddy-llc -filetype=asm -mtriple=riscv64 -mattr=+buddyext,+v -float-abi=hard -O3` |
+
+Build:
+
+```bash
+cd build
+ninja ada300-isa   # → output/subgraph0_isa.o (ELF64 RISC-V relocatable)
+ninja ada300-asm   # → output/subgraph0_isa.s (Ada300 mnemonic assembly)
+```
+
+The object file is a standard ELF64 RISC-V relocatable.  Ada300 instructions
+appear as `CUSTOM_3` opcode words — standard simulators (Spike, QEMU, gem5)
+will not decode them.  A custom Spike RoCC plugin or QEMU TCG plugin is needed
+to run the binary.
 
 ---
 
-## Coexistence with the Inline-Asm Path
+## Cast Handling — unrealized_conversion_cast
+
+After `finalize-memref-to-llvm`, Ada300HW execute ops (`gmma_mm`, etc.) hold
+`memref`-typed operands.  These are connected to their translated `!llvm.struct`
+values via `builtin.unrealized_conversion_cast` bridge ops that
+`reconcile-unrealized-casts` cannot remove (because the Ada300HW ops are
+genuine memref users).
+
+### Problem
+
+The standard `BuiltinDialectLLVMIRTranslationInterface` only handles `ModuleOp`
+and returns `failure()` for everything else.  It never maps the memref-typed
+cast result, so `moduleTranslation.lookupValue(memref_operand)` returns `null`
+for all Ada300HW execute op operands.
+
+### Solution
+
+A `BuddyBuiltinLLVMIRTranslationInterface` is registered for `BuiltinDialect`
+inside `registerAda300HWDialectTranslation()`.  It handles
+`UnrealizedConversionCastOp` by forwarding each operand's already-translated
+LLVM value to the corresponding result.  The `llvm/` upstream submodule is
+**not modified**.
+
+**Registration order** is critical — `registerAda300HWDialectTranslation()` must
+be called **before** `registerAllToLLVMIRTranslations()` in
+`ConvertBuddyToLLVMIR.cpp` so that `BuddyBuiltinLLVMIRTranslationInterface`
+wins the `Dialect::addInterface` `try_emplace` race for the `BuiltinDialect`
+slot.  The standard interface is then silently dropped.
+
+```cpp
+// ConvertBuddyToLLVMIR.cpp — correct order:
+registerAda300HWDialectTranslation(registry); // ← wins the BuiltinDialect slot
+registerAllToLLVMIRTranslations(registry);    // ← standard builtin interface dropped
+```
+
+Additionally, `lookupValueThroughCast()` provides a fallback in the execute-op
+translation code itself: if `lookupValue()` still returns `null` (e.g. in a
+non-standard pipeline), it walks the `unrealized_conversion_cast` chain manually.
+
+---
+
 
 Both paths are active simultaneously.  The user selects the path via the tool:
 
@@ -325,9 +404,13 @@ buddy-opt input.mlir --lower-ada300hw-to-llvm | \
   mlir-translate --mlir-to-llvmir -o out.ll
 
 # ISA backend path (requires buddy patched LLVM):
-buddy-opt input.mlir |
-  mlir-translate --buddy-to-llvmir -o out.ll
-# Then compile out.ll with the buddy LLVM clang/llc targeting riscv64 +buddyext
+buddy-translate --buddy-to-llvmir input.mlir -o out.ll
+# Then compile with buddy-llc:
+buddy-llc -filetype=obj -mtriple=riscv64 -mattr=+buddyext,+v \
+  -float-abi=hard -O3 out.ll -o out.o
+# Or produce a human-readable assembly listing:
+buddy-llc -filetype=asm -mtriple=riscv64 -mattr=+buddyext,+v \
+  -float-abi=hard -O3 out.ll -o out.s
 ```
 
 The two paths share the same Ada300HW dialect ops and attributes — there is
@@ -393,20 +476,20 @@ specification before targeting real hardware.
 ### Vector ops use GPR / i64 addressing (not RVV registers)
 
 `vfpwnl`, `vfcvt`, `vfmul_low`, and `vfmul_high` currently encode the vector
-register as an `i64` integer base address.  The correct encoding should use
+register as an `i64` integer base address (the alloca-spill workaround described
+in §Layer 3 lets them produce correct LLVM IR).  The correct encoding should use
 proper RVV-style vector register operand classes.
 
 **When:** Once the ADA300 V-extension instruction format is known and the buddy
 LLVM backend is extended with the appropriate register classes, update:
 - `backend/include/llvm/IR/IntrinsicsRISCVAda300HW.td` — change `llvm_i64_ty` to an overloaded vector type
 - `backend/llvm/lib/Target/RISCV/RISCVInstrInfoAda300HW.td` — replace `GPR` operand class with a vector register class
-- `midend/lib/Target/LLVMIR/Dialect/Ada300HW/Ada300HWToLLVMIRTranslation.cpp` — remove `ptrToI64` for vector operands; pass vector values directly
+- `midend/lib/Target/LLVMIR/Dialect/Ada300HW/Ada300HWToLLVMIRTranslation.cpp` — remove `valToVecAddr`/`vecAddrToVal`; pass vector values directly
 
-### No DAG ISel patterns yet
+### ~~No DAG ISel patterns~~ ✓ Resolved
 
-The current tablegen defines instruction records (for assembler/disassembler
-generation) but does not yet add `Pat<>` DAG selection patterns.  LLVM will
-use the intrinsic→instruction lowering path, which requires the intrinsic to
-be marked as a builtin in the instruction record.  This is sufficient for
-codegen via `llc` with `-O0` but may need explicit `Pat<>` entries for
-optimised compilation.
+`Pat<>` SelectionDAG patterns are now defined in `RISCVInstrInfoAda300HW.td`
+for all 14 intrinsics.  `buddy-llc -O3` correctly selects and encodes every
+Ada300 instruction.  All instruction attributes are set to
+`hasSideEffects=1, mayLoad=1, mayStore=1` to match LLVM's conservative
+treatment of unspecified-memory intrinsics.
