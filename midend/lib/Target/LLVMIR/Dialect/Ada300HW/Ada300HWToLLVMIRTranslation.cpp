@@ -44,6 +44,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "mlir/IR/BuiltinDialect.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
@@ -105,10 +107,69 @@ static llvm::Value *ptrToI64(llvm::Value *ptr, llvm::IRBuilderBase &builder) {
   return builder.CreatePtrToInt(ptr, i64Ty(builder));
 }
 
+/// Look up the LLVM IR value for an MLIR value, tracing through any
+/// unrealized_conversion_cast chain.
+///
+/// Background: in the Ada300 ISA backend path the Ada300HW execute ops carry
+/// memref-typed operands.  After finalize-memref-to-llvm those operands are
+/// connected to the translated !llvm.struct values via an
+///   unrealized_conversion_cast(!llvm.struct → memref)
+/// bridge op.  The framework translates the cast's LLVM-typed input first
+/// but never maps the memref-typed result, so moduleTranslation.lookupValue()
+/// returns null for the memref value.  We chase the cast chain here to recover
+/// the already-translated LLVM struct.
+static llvm::Value *lookupValueThroughCast(
+    mlir::Value val, LLVM::ModuleTranslation &moduleTranslation) {
+  // Fast path: value already in the translation map.
+  if (llvm::Value *v = moduleTranslation.lookupValue(val))
+    return v;
+  // Slow path: trace through unrealized_conversion_cast chains.
+  mlir::Value cur = val;
+  while (auto castOp =
+             dyn_cast_or_null<UnrealizedConversionCastOp>(
+                 cur.getDefiningOp())) {
+    if (castOp.getInputs().size() != 1)
+      break;
+    cur = castOp.getInputs()[0];
+    if (llvm::Value *v = moduleTranslation.lookupValue(cur))
+      return v;
+  }
+  return nullptr;
+}
+
 /// Convenience: ptrtoint-cast an aligned-pointer extracted from a memref.
 static llvm::Value *memrefToI64(llvm::Value *llvmMemref,
                                   llvm::IRBuilderBase &builder) {
   return ptrToI64(alignedPtrFromMemref(llvmMemref, builder), builder);
+}
+
+/// Obtain the i64 memory address for an LLVM value to pass to an ADA300
+/// vector intrinsic.
+///
+/// ADA300 vector intrinsics take/return vector base addresses as i64.
+///   - If `val` is already a pointer, cast it directly to i64.
+///   - If `val` is a vector or other non-pointer (e.g. the result of
+///     `llvm.load ... : !llvm.ptr -> vector<N x f32>`), spill it to a
+///     stack alloca and return the alloca address as i64.
+static llvm::Value *valToVecAddr(llvm::Value *val,
+                                  llvm::IRBuilderBase &builder) {
+  if (val->getType()->isPointerTy())
+    return ptrToI64(val, builder);
+  // Spill non-pointer (vector register) to stack.
+  llvm::AllocaInst *slot = builder.CreateAlloca(val->getType());
+  builder.CreateStore(val, slot);
+  return ptrToI64(slot, builder);
+}
+
+/// Load a result vector of type `vecTy` from an i64 output address returned
+/// by an ADA300 vector intrinsic.  The returned LLVM value has type `vecTy`
+/// so it can be mapped back to the MLIR result SSA value and used by
+/// downstream LLVM dialect ops (e.g. llvm.store).
+static llvm::Value *vecAddrToVal(llvm::Value *addrI64, llvm::Type *vecTy,
+                                  llvm::IRBuilderBase &builder) {
+  llvm::Value *ptr = builder.CreateIntToPtr(
+      addrI64, llvm::PointerType::getUnqual(builder.getContext()));
+  return builder.CreateLoad(vecTy, ptr);
 }
 
 //===----------------------------------------------------------------------===//
@@ -168,9 +229,9 @@ public:
     // Shared logic for all three-memref tensor-core execute ops.
     auto emitThreeMemref = [&](llvm::Intrinsic::ID id,
                                 Value dst, Value src1, Value src2) -> LogicalResult {
-      llvm::Value *dstLLVM  = moduleTranslation.lookupValue(dst);
-      llvm::Value *s1LLVM   = moduleTranslation.lookupValue(src1);
-      llvm::Value *s2LLVM   = moduleTranslation.lookupValue(src2);
+      llvm::Value *dstLLVM  = lookupValueThroughCast(dst,  moduleTranslation);
+      llvm::Value *s1LLVM   = lookupValueThroughCast(src1, moduleTranslation);
+      llvm::Value *s2LLVM   = lookupValueThroughCast(src2, moduleTranslation);
       if (!dstLLVM || !s1LLVM || !s2LLVM)
         return failure();
       auto *fn = getIntrinsic(module, id);
@@ -223,18 +284,23 @@ public:
           moduleTranslation.lookupValue(vecOp.getInput());
       if (!inputLLVM)
         return failure();
-      // Pass vector as i64 base address; func and segments as i64 immediates.
-      llvm::Value *inputI64 = ptrToI64(inputLLVM, builder);
+      llvm::Type *vecTy = inputLLVM->getType();
+      // ADA300 intrinsic expects an i64 base address, not a vector register.
+      // Spill the input vector to a stack alloca and pass its address.
+      llvm::Value *inputI64 = valToVecAddr(inputLLVM, builder);
       uint64_t funcVal =
           static_cast<uint64_t>(vecOp.getFuncAttr().getValue());
       uint64_t segVal =
           static_cast<uint64_t>(vecOp.getSegmentsAttr().getValue());
       auto *fn = getIntrinsic(module, llvm::Intrinsic::riscv_ada300_vfpwnl);
-      llvm::Value *resultI64 = builder.CreateCall(
+      // Intrinsic returns the i64 output address where the HW wrote results.
+      llvm::Value *outputI64 = builder.CreateCall(
           fn, {inputI64, i64Const(builder, funcVal),
                i64Const(builder, segVal)});
-      // Map intrinsic result (i64 address) back to the MLIR result value.
-      moduleTranslation.mapValue(vecOp.getResult(), resultI64);
+      // Load the result vector from that address so the MLIR result value has
+      // the expected vector type (needed by downstream llvm.store users).
+      moduleTranslation.mapValue(vecOp.getResult(),
+                                 vecAddrToVal(outputI64, vecTy, builder));
       return success();
     }
 
@@ -244,16 +310,23 @@ public:
           moduleTranslation.lookupValue(vecOp.getInput());
       if (!inputLLVM)
         return failure();
-      llvm::Value *inputI64 = ptrToI64(inputLLVM, builder);
+      // Derive the LLVM result type from the MLIR result type (may differ from
+      // input type, e.g. f32 → f16 conversion changes element type/size).
+      llvm::Type *resultTy =
+          moduleTranslation.convertType(vecOp.getResult().getType());
+      if (!resultTy)
+        return failure();
+      llvm::Value *inputI64 = valToVecAddr(inputLLVM, builder);
       uint64_t dstTypeVal =
           static_cast<uint64_t>(vecOp.getDstTypeAttr().getValue());
       uint64_t partVal =
           static_cast<uint64_t>(vecOp.getPartAttr().getValue());
       auto *fn = getIntrinsic(module, llvm::Intrinsic::riscv_ada300_vfcvt);
-      llvm::Value *resultI64 = builder.CreateCall(
+      llvm::Value *outputI64 = builder.CreateCall(
           fn, {inputI64, i64Const(builder, dstTypeVal),
                i64Const(builder, partVal)});
-      moduleTranslation.mapValue(vecOp.getResult(), resultI64);
+      moduleTranslation.mapValue(vecOp.getResult(),
+                                 vecAddrToVal(outputI64, resultTy, builder));
       return success();
     }
 
@@ -263,11 +336,17 @@ public:
       llvm::Value *rhsLLVM = moduleTranslation.lookupValue(vecOp.getRhs());
       if (!lhsLLVM || !rhsLLVM)
         return failure();
+      llvm::Type *resultTy =
+          moduleTranslation.convertType(vecOp.getResult().getType());
+      if (!resultTy)
+        return failure();
       auto *fn =
           getIntrinsic(module, llvm::Intrinsic::riscv_ada300_vfmul_low);
-      llvm::Value *resultI64 = builder.CreateCall(
-          fn, {ptrToI64(lhsLLVM, builder), ptrToI64(rhsLLVM, builder)});
-      moduleTranslation.mapValue(vecOp.getResult(), resultI64);
+      llvm::Value *outputI64 = builder.CreateCall(
+          fn, {valToVecAddr(lhsLLVM, builder),
+               valToVecAddr(rhsLLVM, builder)});
+      moduleTranslation.mapValue(vecOp.getResult(),
+                                 vecAddrToVal(outputI64, resultTy, builder));
       return success();
     }
 
@@ -277,11 +356,59 @@ public:
       llvm::Value *rhsLLVM = moduleTranslation.lookupValue(vecOp.getRhs());
       if (!lhsLLVM || !rhsLLVM)
         return failure();
+      llvm::Type *resultTy =
+          moduleTranslation.convertType(vecOp.getResult().getType());
+      if (!resultTy)
+        return failure();
       auto *fn =
           getIntrinsic(module, llvm::Intrinsic::riscv_ada300_vfmul_high);
-      llvm::Value *resultI64 = builder.CreateCall(
-          fn, {ptrToI64(lhsLLVM, builder), ptrToI64(rhsLLVM, builder)});
-      moduleTranslation.mapValue(vecOp.getResult(), resultI64);
+      llvm::Value *outputI64 = builder.CreateCall(
+          fn, {valToVecAddr(lhsLLVM, builder),
+               valToVecAddr(rhsLLVM, builder)});
+      moduleTranslation.mapValue(vecOp.getResult(),
+                                 vecAddrToVal(outputI64, resultTy, builder));
+      return success();
+    }
+
+    return failure();
+  }
+};
+
+/// Translation interface for the MLIR builtin dialect.
+///
+/// Overrides the upstream BuiltinDialectLLVMIRTranslationInterface to add
+/// handling for unrealized_conversion_cast ops that survive past
+/// reconcile-unrealized-casts because Ada300HW execute ops are genuine memref
+/// users of the cast result.
+///
+/// IMPORTANT: registerAda300HWDialectTranslation() must be called BEFORE
+/// registerAllToLLVMIRTranslations() so that this interface wins the
+/// Dialect::addInterface try_emplace race for the BuiltinDialect slot.
+class BuddyBuiltinLLVMIRTranslationInterface
+    : public LLVMTranslationDialectInterface {
+public:
+  using LLVMTranslationDialectInterface::LLVMTranslationDialectInterface;
+
+  LogicalResult
+  convertOperation(Operation *op, llvm::IRBuilderBase &builder,
+                   LLVM::ModuleTranslation &moduleTranslation) const override {
+    // ModuleOp has no LLVM IR equivalent; returning success is correct.
+    if (isa<ModuleOp>(op))
+      return success();
+
+    // unrealized_conversion_cast(!llvm.struct → memref): forward the
+    // already-translated operand value to the result so that downstream
+    // Ada300HW execute op translation can find it via lookupValue().
+    if (auto castOp = dyn_cast<UnrealizedConversionCastOp>(op)) {
+      if (castOp.getNumOperands() != castOp.getNumResults())
+        return failure();
+      for (auto [operand, result] :
+           llvm::zip(castOp.getOperands(), castOp.getResults())) {
+        llvm::Value *llvmVal = moduleTranslation.lookupValue(operand);
+        if (!llvmVal)
+          return failure();
+        moduleTranslation.mapValue(result, llvmVal);
+      }
       return success();
     }
 
@@ -296,7 +423,20 @@ public:
 //===----------------------------------------------------------------------===//
 
 void buddy::registerAda300HWDialectTranslation(DialectRegistry &registry) {
+  // Ada300HW ops carry #ada300hl.* attributes (tensor_mode, dtype, etc.).
+  // Register Ada300HLDialect so the MLIR parser can resolve those attribute
+  // types when loading the input file.
+  registry.insert<Ada300HLDialect>();
   registry.insert<Ada300HWDialect>();
+
+  // Register the BuddyBuiltin handler for unrealized_conversion_cast.
+  // This MUST be added to the registry before registerAllToLLVMIRTranslations
+  // is called (in ConvertBuddyToLLVMIR.cpp), so that BuddyBuiltinLLVMIRTranslationInterface
+  // wins the Dialect::addInterface try_emplace race for the BuiltinDialect slot.
+  registry.addExtension(
+      +[](MLIRContext *ctx, BuiltinDialect *dialect) {
+        dialect->addInterfaces<BuddyBuiltinLLVMIRTranslationInterface>();
+      });
   registry.addExtension(
       +[](MLIRContext *ctx, Ada300HWDialect *dialect) {
         dialect->addInterfaces<Ada300HWDialectLLVMIRTranslationInterface>();

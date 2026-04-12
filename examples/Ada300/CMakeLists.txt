@@ -417,3 +417,133 @@ add_custom_target(ada300-assemble
     ${CMAKE_CURRENT_BINARY_DIR}/forward.o
   COMMENT "Ada300: assembling LLVM IR → object files (requires Ada300-enabled toolchain)"
 )
+
+# ---------------------------------------------------------------------------
+# ISA backend path: Ada300HW ops → LLVM IR intrinsic calls → binary
+#
+# Enable with:  cmake .. -DBUDDY_ADA300_ISA_BACKEND=ON
+#
+# The "patched backend" is NOT a separate build — it is the buddy-mlir main
+# build itself.  When the root CMakeLists.txt is configured with the backend/
+# subdirectory (add_subdirectory(backend)), the Ada300HW intrinsic declarations
+# and RISCVInstrInfoAda300HW.td machine-encoding patches are compiled into the
+# LLVM RISC-V target library.  The resulting ${BUDDY_BINARY_DIR}/buddy-llc and
+# ${BUDDY_BINARY_DIR}/buddy-translate are the patched tools.
+#
+# Unlike the inline-asm path (ada300-lower/ada300-assemble), this path:
+#   1. Skips lower-ada300hw-to-llvm entirely — Ada300HW ops are preserved
+#      through all standard finishing passes.
+#   2. Uses buddy-translate --buddy-to-llvmir which invokes
+#      Ada300HWToLLVMIRTranslation to emit LLVM intrinsic calls
+#      (@llvm.riscv.ada300_*) instead of inline_asm strings.
+#   3. Compiles with buddy-llc (-mtriple=riscv64 -mattr=+buddyext,+v)
+#      whose patched RISC-V backend matches those intrinsics via the
+#      R-format TableGen patterns in RISCVInstrInfoAda300HW.td and emits
+#      correctly-encoded binary.
+#
+# Pipeline:
+#   stage5_ada300hw.mlir
+#     → stage7_isa_finished.mlir   (finishing passes, NO lower-ada300hw-to-llvm)
+#     → subgraph0_isa.ll           (buddy-translate --buddy-to-llvmir)
+#     → subgraph0_isa.o            (buddy-llc -mtriple=riscv64 -mattr=+buddyext,+v)
+# ---------------------------------------------------------------------------
+
+if(BUDDY_ADA300_ISA_BACKEND)
+  message(STATUS "Ada300: ISA backend path enabled — using patched buddy-llc from ${BUDDY_BINARY_DIR}")
+
+  # Finishing passes for the ISA path — deliberately omits lower-ada300hw-to-llvm
+  # so that Ada300HW ops survive into the LLVM IR translation step.
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/stage7_isa_finished.mlir
+    COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${ADA300_DUMP_DIR}/stage5_ada300hw.mlir
+              -convert-linalg-to-loops
+              -expand-strided-metadata
+              -lower-affine
+              -convert-vector-to-llvm
+              -convert-math-to-llvm
+              -convert-math-to-libm
+              -convert-scf-to-cf
+              -convert-cf-to-llvm
+              -convert-arith-to-llvm
+              -finalize-memref-to-llvm
+              -convert-func-to-llvm
+              -reconcile-unrealized-casts
+              -o ${ADA300_DUMP_DIR}/stage7_isa_finished.mlir
+    DEPENDS ${ADA300_DUMP_DIR}/stage5_ada300hw.mlir
+            buddy-opt
+    COMMENT "Ada300 ISA Stage 7: finishing passes (no lower-ada300hw-to-llvm) → stage7_isa_finished.mlir"
+    VERBATIM
+  )
+
+  # Translate Ada300HW ops to LLVM IR intrinsic calls via Ada300HWToLLVMIRTranslation.
+  # buddy-translate is built from tools/buddy-translate/ and links
+  # BuddyAda300HWToLLVMIRTranslation which registers --buddy-to-llvmir.
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/subgraph0_isa.ll
+    COMMAND ${BUDDY_BINARY_DIR}/buddy-translate
+              --buddy-to-llvmir
+              ${ADA300_DUMP_DIR}/stage7_isa_finished.mlir
+              -o ${ADA300_DUMP_DIR}/subgraph0_isa.ll
+    DEPENDS ${ADA300_DUMP_DIR}/stage7_isa_finished.mlir
+            buddy-translate
+    COMMENT "Ada300 ISA: buddy-translate --buddy-to-llvmir → subgraph0_isa.ll"
+    VERBATIM
+  )
+
+  # Compile LLVM IR intrinsic calls → RISC-V object file.
+  # buddy-llc is the patched llc produced by the main build; its RISC-V target
+  # contains RISCVInstrInfoAda300HW.td patterns that encode @llvm.riscv.ada300_*
+  # calls into correct R-format machine binary.
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/subgraph0_isa.o
+    COMMAND ${BUDDY_BINARY_DIR}/buddy-llc
+              -filetype=obj
+              -mtriple=riscv64
+              -mattr=+buddyext,+v
+              -float-abi=hard
+              -relocation-model=pic
+              -O3
+              ${ADA300_DUMP_DIR}/subgraph0_isa.ll
+              -o ${ADA300_DUMP_DIR}/subgraph0_isa.o
+    DEPENDS ${ADA300_DUMP_DIR}/subgraph0_isa.ll
+            buddy-llc
+    COMMENT "Ada300 ISA: buddy-llc → subgraph0_isa.o (RISC-V + buddyext binary)"
+    VERBATIM
+  )
+
+  # Emit RISC-V assembly (human-readable, same flags as the object rule).
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/subgraph0_isa.s
+    COMMAND ${BUDDY_BINARY_DIR}/buddy-llc
+              -filetype=asm
+              -mtriple=riscv64
+              -mattr=+buddyext,+v
+              -float-abi=hard
+              -relocation-model=pic
+              -O3
+              ${ADA300_DUMP_DIR}/subgraph0_isa.ll
+              -o ${ADA300_DUMP_DIR}/subgraph0_isa.s
+    DEPENDS ${ADA300_DUMP_DIR}/subgraph0_isa.ll
+            buddy-llc
+    COMMENT "Ada300 ISA: buddy-llc → subgraph0_isa.s (RISC-V + buddyext assembly)"
+    VERBATIM
+  )
+
+  # Convenience target: full ISA backend path → object file
+  add_custom_target(ada300-isa
+    DEPENDS
+      ${ADA300_DUMP_DIR}/subgraph0_isa.o
+      ${CMAKE_CURRENT_BINARY_DIR}/forward.o
+    COMMENT "Ada300: ISA backend path complete (intrinsic-based binary)"
+  )
+
+  # Convenience target: full ISA backend path → assembly listing
+  add_custom_target(ada300-asm
+    DEPENDS
+      ${ADA300_DUMP_DIR}/subgraph0_isa.s
+    COMMENT "Ada300: ISA backend path complete (assembly listing)"
+  )
+
+else()
+  message(STATUS "Ada300: ISA backend path disabled (set BUDDY_ADA300_ISA_BACKEND=ON to enable)")
+endif() # BUDDY_ADA300_ISA_BACKEND

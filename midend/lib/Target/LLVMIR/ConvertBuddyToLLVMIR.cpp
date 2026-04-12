@@ -52,13 +52,17 @@ void registerBuddyToLLVMIRTranslation() {
       [](DialectRegistry &registry) {
         // Register translation in upstream MLIR.
         registry.insert<DLTIDialect, func::FuncDialect>();
+        // Ada300HW MUST be registered before registerAllToLLVMIRTranslations
+        // so that BuddyBuiltinLLVMIRTranslationInterface (which handles
+        // unrealized_conversion_cast) wins the Dialect::addInterface
+        // try_emplace race for BuiltinDialect over the standard interface.
+        registerAda300HWDialectTranslation(registry);
         registerAllToLLVMIRTranslations(registry);
         // Register translation in buddy project.
         registerRVVDialectTranslation(registry);
         registerGemminiDialectTranslation(registry);
         registerIMEDialectTranslation(registry);
         registerAMEDialectTranslation(registry);
-        registerAda300HWDialectTranslation(registry);
       });
 }
 } // namespace buddy

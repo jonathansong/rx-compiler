@@ -1493,6 +1493,4 @@ let Predicates = [HasBuddyExt] in {
 // Utility:
 //   - mzero.m: Zero out AccReg
 
-// Include Ada300HW custom ISA instruction encodings.
-include "RISCVInstrInfoAda300HW.td"
 //===----------------------------------------------------------------------===//

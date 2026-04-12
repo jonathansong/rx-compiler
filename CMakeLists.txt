@@ -98,6 +98,10 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${BUDDY_LIBRARY_DIR})
 
 set(BUDDY_EXAMPLES OFF CACHE BOOL "Build examples")
 set(BUDDY_TRANSFORMER_EXAMPLES OFF CACHE BOOL "Build transformer examples")
+set(BUDDY_ADA300_EXAMPLES ON CACHE BOOL "Build Ada300 dialect examples")
+set(BUDDY_ADA300_ISA_BACKEND ON CACHE BOOL
+    "Enable the Ada300 LLVM ISA backend path (buddy-translate --buddy-to-llvmir + buddy-llc). \
+Requires the patched RISC-V backend built by adding backend/ into the main build.")
 set(BUDDY_ENABLE_OPENCV OFF CACHE BOOL "Enable OpenCV support.")
 
  if(BUDDY_ENABLE_OPENCV)

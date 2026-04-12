@@ -16,6 +16,12 @@
 //
 // RISC-V instruction binary encodings for the ADA300 custom ISA extension.
 //
+// SelectionDAG patterns in this file reference intrinsics from
+// IntrinsicsRISCVAda300HW.td; that file is included here so that the
+// intrinsic names are in scope when llvm-tblgen processes this file.
+//
+include "llvm/IR/IntrinsicsRISCVAda300HW.td"
+//
 // All instructions use:
 //   opcode = OPC_CUSTOM_3  (0b1111011)
 //   func3  = 0b011          (same convention as the Gemmini buddy extension)
@@ -53,7 +59,7 @@
 
 // ada300.set_gmm_cfg
 //   Writes gmm_cfg: rs1 = packed dims, rs2 = mode.
-let hasSideEffects = 1, mayLoad = 0, mayStore = 1, Predicates = [HasBuddyExt] in
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1, Predicates = [HasBuddyExt] in
 def ADA300_SET_GMM_CFG : RVInstR<0b1000000, 0b011, OPC_CUSTOM_3, (outs),
     (ins GPR:$rs1, GPR:$rs2), "ada300.set_gmm_cfg", "$rs1, $rs2"> {
   let rd = 0;
@@ -61,7 +67,7 @@ def ADA300_SET_GMM_CFG : RVInstR<0b1000000, 0b011, OPC_CUSTOM_3, (outs),
 
 // ada300.set_gmm_type
 //   Writes gmm_type: rs1 = out_type | (act_type<<8), rs2 = wht_type.
-let hasSideEffects = 1, mayLoad = 0, mayStore = 1, Predicates = [HasBuddyExt] in
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1, Predicates = [HasBuddyExt] in
 def ADA300_SET_GMM_TYPE : RVInstR<0b1000001, 0b011, OPC_CUSTOM_3, (outs),
     (ins GPR:$rs1, GPR:$rs2), "ada300.set_gmm_type", "$rs1, $rs2"> {
   let rd = 0;
@@ -69,7 +75,7 @@ def ADA300_SET_GMM_TYPE : RVInstR<0b1000001, 0b011, OPC_CUSTOM_3, (outs),
 
 // ada300.set_gmm_iter
 //   Writes gmm_iter: rs1 = blk_cnt_a, rs2 = blk_cnt_w.
-let hasSideEffects = 1, mayLoad = 0, mayStore = 1, Predicates = [HasBuddyExt] in
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1, Predicates = [HasBuddyExt] in
 def ADA300_SET_GMM_ITER : RVInstR<0b1000010, 0b011, OPC_CUSTOM_3, (outs),
     (ins GPR:$rs1, GPR:$rs2), "ada300.set_gmm_iter", "$rs1, $rs2"> {
   let rd = 0;
@@ -139,28 +145,74 @@ def ADA300_TCSYNC : RVInstR<0b1001001, 0b011, OPC_CUSTOM_3, (outs),
 
 // ada300.vfpwnl
 //   rs1 = input vector address, rs2 = func enum, rd = segments.
-let hasSideEffects = 0, mayLoad = 0, mayStore = 0, Predicates = [HasBuddyExt] in
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1, Predicates = [HasBuddyExt] in
 def ADA300_VFPWNL : RVInstR<0b1001010, 0b011, OPC_CUSTOM_3, (outs GPR:$rd_out),
     (ins GPR:$rd, GPR:$rs1, GPR:$rs2), "ada300.vfpwnl", "$rd, $rs1, $rs2"> {
+  let Constraints = "$rd_out = $rd";
 }
 
 // ada300.vfcvt
 //   rs1 = input vector address, rs2 = dst_type, rd = part.
-let hasSideEffects = 0, mayLoad = 0, mayStore = 0, Predicates = [HasBuddyExt] in
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1, Predicates = [HasBuddyExt] in
 def ADA300_VFCVT : RVInstR<0b1001011, 0b011, OPC_CUSTOM_3, (outs GPR:$rd_out),
     (ins GPR:$rd, GPR:$rs1, GPR:$rs2), "ada300.vfcvt", "$rd, $rs1, $rs2"> {
+  let Constraints = "$rd_out = $rd";
 }
 
 // ada300.vfmul_low
 //   rs1 = lhs vector address, rs2 = rhs vector address.
-let hasSideEffects = 0, mayLoad = 0, mayStore = 0, Predicates = [HasBuddyExt] in
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1, Predicates = [HasBuddyExt] in
 def ADA300_VFMUL_LOW : RVInstR<0b1001100, 0b011, OPC_CUSTOM_3, (outs GPR:$rd),
     (ins GPR:$rs1, GPR:$rs2), "ada300.vfmul_low", "$rd, $rs1, $rs2"> {
 }
 
 // ada300.vfmul_high
 //   rs1 = lhs vector address, rs2 = rhs vector address.
-let hasSideEffects = 0, mayLoad = 0, mayStore = 0, Predicates = [HasBuddyExt] in
+let hasSideEffects = 1, mayLoad = 1, mayStore = 1, Predicates = [HasBuddyExt] in
 def ADA300_VFMUL_HIGH : RVInstR<0b1001101, 0b011, OPC_CUSTOM_3, (outs GPR:$rd),
     (ins GPR:$rs1, GPR:$rs2), "ada300.vfmul_high", "$rd, $rs1, $rs2"> {
 }
+
+// ── SelectionDAG patterns ────────────────────────────────────────────────────
+// Map each intrinsic to its machine instruction for the SelectionDAG isel.
+
+let Predicates = [HasBuddyExt] in {
+
+// ── Config ops (void, rs1 + rs2) ─────────────────────────────────────────────
+def : Pat<(int_riscv_ada300_set_gmm_cfg GPR:$rs1, GPR:$rs2),
+          (ADA300_SET_GMM_CFG GPR:$rs1, GPR:$rs2)>;
+def : Pat<(int_riscv_ada300_set_gmm_type GPR:$rs1, GPR:$rs2),
+          (ADA300_SET_GMM_TYPE GPR:$rs1, GPR:$rs2)>;
+def : Pat<(int_riscv_ada300_set_gmm_iter GPR:$rs1, GPR:$rs2),
+          (ADA300_SET_GMM_ITER GPR:$rs1, GPR:$rs2)>;
+
+// ── Execute ops (void, rd + rs1 + rs2) ───────────────────────────────────────
+def : Pat<(int_riscv_ada300_gmm_mm GPR:$rd, GPR:$rs1, GPR:$rs2),
+          (ADA300_GMM_MM GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+def : Pat<(int_riscv_ada300_gmma_mm GPR:$rd, GPR:$rs1, GPR:$rs2),
+          (ADA300_GMMA_MM GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+def : Pat<(int_riscv_ada300_gmma_mt GPR:$rd, GPR:$rs1, GPR:$rs2),
+          (ADA300_GMMA_MT GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+def : Pat<(int_riscv_ada300_gmv_mm GPR:$rd, GPR:$rs1, GPR:$rs2),
+          (ADA300_GMV_MM GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+def : Pat<(int_riscv_ada300_gmva_mm GPR:$rd, GPR:$rs1, GPR:$rs2),
+          (ADA300_GMVA_MM GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+def : Pat<(int_riscv_ada300_gmva_mt GPR:$rd, GPR:$rs1, GPR:$rs2),
+          (ADA300_GMVA_MT GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+
+// ── Sync op (void, no operands) ───────────────────────────────────────────────
+def : Pat<(int_riscv_ada300_tcsync), (ADA300_TCSYNC)>;
+
+// ── Vector ops (i64 result) ───────────────────────────────────────────────────
+// vfpwnl / vfcvt: rd is modify-in-place (Constraints = "$rd_out = $rd").
+def : Pat<(i64 (int_riscv_ada300_vfpwnl GPR:$rd, GPR:$rs1, GPR:$rs2)),
+          (ADA300_VFPWNL GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+def : Pat<(i64 (int_riscv_ada300_vfcvt GPR:$rd, GPR:$rs1, GPR:$rs2)),
+          (ADA300_VFCVT GPR:$rd, GPR:$rs1, GPR:$rs2)>;
+// vfmul_low / vfmul_high: fresh output rd, two source GPRs.
+def : Pat<(i64 (int_riscv_ada300_vfmul_low GPR:$rs1, GPR:$rs2)),
+          (ADA300_VFMUL_LOW GPR:$rs1, GPR:$rs2)>;
+def : Pat<(i64 (int_riscv_ada300_vfmul_high GPR:$rs1, GPR:$rs2)),
+          (ADA300_VFMUL_HIGH GPR:$rs1, GPR:$rs2)>;
+
+} // Predicates = [HasBuddyExt]
