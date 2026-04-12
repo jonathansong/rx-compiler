@@ -234,6 +234,201 @@ add_custom_command(
     VERBATIM)
 
 
+# Dump optimized MLIR before conversion to LLVM IR (Method 1: break pipe before mlir-translate)
+add_custom_command(
+  OUTPUT forward_prefill_0_6b.optimized.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/forward_prefill_0_6b.mlir
+            -simplify-tosa-reshape |
+          ${LLVM_TOOLS_BINARY_DIR}/mlir-opt
+            -pass-pipeline ${TOSA_PIPELINE} |
+          ${BUDDY_BINARY_DIR}/buddy-opt
+            -eliminate-empty-tensors
+            -empty-tensor-to-alloc-tensor
+            -one-shot-bufferize=${BUFFERIZE_SIMPLE_OPTS}
+            -expand-strided-metadata
+            -ownership-based-buffer-deallocation
+            -canonicalize
+            -buffer-deallocation-simplification
+            -bufferization-lower-deallocations
+            -cse
+            -canonicalize
+            -optimize-allocation-liveness
+            -matmul-vectorization-blis
+            -batchmatmul-optimize
+            -convert-linalg-to-affine-loops
+            -affine-parallelize
+            -convert-vector-to-scf
+            -lower-affine
+            -convert-scf-to-openmp=${OPENMP_NUM_THREADS}
+            -memref-expand
+            -arith-expand
+            -convert-vector-to-llvm
+            -convert-arith-to-llvm
+            -finalize-memref-to-llvm
+            -convert-scf-to-cf
+            -convert-cf-to-llvm
+            -llvm-request-c-wrappers
+            -convert-openmp-to-llvm
+            -convert-arith-to-llvm
+            -convert-math-to-llvm
+            -convert-math-to-libm
+            -convert-func-to-llvm
+            -reconcile-unrealized-casts
+            -o ${CMAKE_CURRENT_BINARY_DIR}/forward_prefill_0_6b.optimized.mlir
+  DEPENDS buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/forward_prefill_0_6b.mlir
+  COMMENT "Dumping optimized MLIR for forward_prefill"
+  VERBATIM)
+
+add_custom_command(
+  OUTPUT subgraph_prefill_0_6b.optimized.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_prefill_0_6b.mlir
+            -simplify-tosa-reshape |
+          ${LLVM_TOOLS_BINARY_DIR}/mlir-opt
+            -pass-pipeline ${TOSA_PIPELINE} |
+          ${BUDDY_BINARY_DIR}/buddy-opt
+            -eliminate-empty-tensors
+            -empty-tensor-to-alloc-tensor
+            -convert-elementwise-to-linalg
+            -one-shot-bufferize=${BUFFERIZE_SIMPLE_OPTS}
+            -expand-strided-metadata
+            -ownership-based-buffer-deallocation
+            -canonicalize
+            -buffer-deallocation-simplification
+            -bufferization-lower-deallocations
+            -cse
+            -canonicalize
+            -optimize-allocation-liveness
+            -matmul-vectorization-blis
+            -batchmatmul-optimize
+            -batchmatmul-transpose-b-vectorization
+            -convert-linalg-to-affine-loops
+            -affine-parallelize
+            -convert-vector-to-scf
+            -lower-affine
+            -convert-scf-to-openmp=num-threads=48
+            -cse
+            -memref-expand
+            -arith-expand
+            -convert-vector-to-llvm
+            -convert-arith-to-llvm
+            -finalize-memref-to-llvm
+            -convert-scf-to-cf
+            -convert-cf-to-llvm
+            -llvm-request-c-wrappers
+            -convert-openmp-to-llvm
+            -convert-arith-to-llvm
+            -convert-math-to-llvm
+            -convert-math-to-libm
+            -convert-func-to-llvm
+            -reconcile-unrealized-casts
+            -o ${CMAKE_CURRENT_BINARY_DIR}/subgraph_prefill_0_6b.optimized.mlir
+  DEPENDS buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_prefill_0_6b.mlir
+  COMMENT "Dumping optimized MLIR for subgraph_prefill"
+  VERBATIM)
+
+add_custom_command(
+  OUTPUT forward_decode_0_6b.optimized.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/forward_decode_0_6b.mlir
+            -simplify-tosa-reshape |
+          ${LLVM_TOOLS_BINARY_DIR}/mlir-opt
+            -pass-pipeline ${TOSA_PIPELINE} |
+          ${BUDDY_BINARY_DIR}/buddy-opt
+            -eliminate-empty-tensors
+            -empty-tensor-to-alloc-tensor
+            -one-shot-bufferize=${BUFFERIZE_SIMPLE_OPTS}
+            -expand-strided-metadata
+            -ownership-based-buffer-deallocation
+            -canonicalize
+            -buffer-deallocation-simplification
+            -bufferization-lower-deallocations
+            -cse
+            -canonicalize
+            -optimize-allocation-liveness
+            -matmul-vectorization-blis
+            -batchmatmul-optimize
+            -convert-linalg-to-affine-loops
+            -affine-parallelize
+            -convert-vector-to-scf
+            -lower-affine
+            -convert-scf-to-openmp=${OPENMP_NUM_THREADS}
+            -memref-expand
+            -arith-expand
+            -convert-vector-to-llvm
+            -convert-arith-to-llvm
+            -finalize-memref-to-llvm
+            -convert-scf-to-cf
+            -convert-cf-to-llvm
+            -llvm-request-c-wrappers
+            -convert-openmp-to-llvm
+            -convert-arith-to-llvm
+            -convert-math-to-llvm
+            -convert-math-to-libm
+            -convert-func-to-llvm
+            -reconcile-unrealized-casts
+            -o ${CMAKE_CURRENT_BINARY_DIR}/forward_decode_0_6b.optimized.mlir
+  DEPENDS buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/forward_decode_0_6b.mlir
+  COMMENT "Dumping optimized MLIR for forward_decode"
+  VERBATIM)
+
+add_custom_command(
+  OUTPUT subgraph_decode_0_6b.optimized.mlir
+  COMMAND ${BUDDY_BINARY_DIR}/buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_decode_0_6b.mlir
+            -simplify-tosa-reshape
+            -simplify-tosa-matmul-scalar |
+          ${LLVM_TOOLS_BINARY_DIR}/mlir-opt
+            -pass-pipeline ${TOSA_PIPELINE} |
+          ${BUDDY_BINARY_DIR}/buddy-opt
+            -eliminate-empty-tensors
+            -empty-tensor-to-alloc-tensor
+            -convert-elementwise-to-linalg
+            -one-shot-bufferize=${BUFFERIZE_SIMPLE_OPTS}
+            -expand-strided-metadata
+            -ownership-based-buffer-deallocation
+            -canonicalize
+            -buffer-deallocation-simplification
+            -bufferization-lower-deallocations
+            -cse
+            -canonicalize
+            -optimize-allocation-liveness
+            -eliminate-memref-copy
+            -assume-tight-memref-layout
+            -staticize-memref-layout
+            -matmul-vectorization-decode=vector-size=128
+            -batch-matmul-vectorization-decode=vector-size=128
+            -batchmatmul-transpose-b-vectorization=vector-size=16
+            -convert-linalg-to-affine-loops
+            -convert-vector-to-scf
+            -lower-affine
+            -convert-scf-to-openmp=${OPENMP_NUM_THREADS}
+            -cse
+            -memref-expand
+            -arith-expand
+            -convert-vector-to-llvm
+            -convert-arith-to-llvm
+            -finalize-memref-to-llvm
+            -convert-scf-to-cf
+            -convert-cf-to-llvm
+            -llvm-request-c-wrappers
+            -convert-openmp-to-llvm
+            -convert-arith-to-llvm
+            -convert-math-to-llvm
+            -convert-math-to-libm
+            -convert-func-to-llvm
+            -reconcile-unrealized-casts
+            -o ${CMAKE_CURRENT_BINARY_DIR}/subgraph_decode_0_6b.optimized.mlir
+  DEPENDS buddy-opt ${CMAKE_CURRENT_BINARY_DIR}/subgraph0_decode_0_6b.mlir
+  COMMENT "Dumping optimized MLIR for subgraph_decode"
+  VERBATIM)
+
+add_custom_target(qwen3-dump-mlir
+  DEPENDS
+    ${CMAKE_CURRENT_BINARY_DIR}/forward_prefill_0_6b.optimized.mlir
+    ${CMAKE_CURRENT_BINARY_DIR}/subgraph_prefill_0_6b.optimized.mlir
+    ${CMAKE_CURRENT_BINARY_DIR}/forward_decode_0_6b.optimized.mlir
+    ${CMAKE_CURRENT_BINARY_DIR}/subgraph_decode_0_6b.optimized.mlir
+  COMMENT "All optimized MLIR dumps complete"
+)
+
 add_library(QWEN3_0_6B STATIC forward_prefill_0_6b.o subgraph_prefill_0_6b.o forward_decode_0_6b.o subgraph_decode_0_6b.o)
 
 SET_SOURCE_FILES_PROPERTIES(

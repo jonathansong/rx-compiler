@@ -67,9 +67,13 @@ output_dir = args.output_dir
 os.makedirs(output_dir, exist_ok=True)
 
 # Retrieve the Qwen3-0.6B model path from environment variables.
-model_path = os.environ.get("QWEN3-0.6B_MODEL_PATH")
-if model_path is None:
+# If the local path exists, use it directly; otherwise download from Hugging Face Hub.
+model_path = os.environ.get("QWEN3-0.6B_MODEL_PATH", "/home/jon/.cache/huggingface/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca")
+if os.path.exists(model_path):
+    print(f"Loading model from local path: {model_path}")
+else:
     model_path = "Qwen/Qwen3-0.6B"
+    print(f"Local model path not found, downloading from Hugging Face: {model_path}")
 
 # Initialize the model from the specified model path.
 model = AutoModelForCausalLM.from_pretrained(model_path).eval().to(torch.float32)

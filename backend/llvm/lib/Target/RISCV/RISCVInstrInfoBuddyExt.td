@@ -149,6 +149,9 @@ def LOOP_CONV_WS_CONFIG4 : RVInstR<0b0010011, 0b011, OPC_CUSTOM_3, (outs),
     let rd = 0;
 }
 
+// Include Ada300HW custom ISA instruction encodings.
+include "RISCVInstrInfoAda300HW.td"
+
 let Predicates = [HasBuddyExt] in
 def LOOP_CONV_WS_CONFIG5 : RVInstR<0b0010100, 0b011, OPC_CUSTOM_3, (outs),
                         (ins GPR:$rs1, GPR:$rs2), "loop_conv_ws_config5", "$rs1, $rs2"> {
@@ -1489,4 +1492,7 @@ let Predicates = [HasBuddyExt] in {
 //
 // Utility:
 //   - mzero.m: Zero out AccReg
+
+// Include Ada300HW custom ISA instruction encodings.
+include "RISCVInstrInfoAda300HW.td"
 //===----------------------------------------------------------------------===//

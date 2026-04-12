@@ -22,3 +22,5 @@
 include "Intrinsics.td"
 // Include buddy extension intrinsic tablegen file.
 include "IntrinsicsRISCVBuddyExt.td"
+// Include Ada300HW custom ISA intrinsic declarations.
+include "IntrinsicsRISCVAda300HW.td"
