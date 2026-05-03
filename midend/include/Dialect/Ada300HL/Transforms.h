@@ -89,6 +89,11 @@ void registerLinalgToAda300HLPass();
 /// lowering pipeline.
 void registerTosaToAda300HLPass();
 
+/// Register the Ada300HL → rx-ops library-call lowering pass.
+/// Replaces every Ada300HL op with a call to the corresponding
+/// rxops_bridge_* wrapper (rx_ops_bridge.h / rx_ops_bridge.c).
+void registerLowerAda300HLToRxOpsPass();
+
 } // namespace buddy
 } // namespace mlir
 

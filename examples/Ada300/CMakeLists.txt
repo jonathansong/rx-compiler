@@ -547,3 +547,187 @@ if(BUDDY_ADA300_ISA_BACKEND)
 else()
   message(STATUS "Ada300: ISA backend path disabled (set BUDDY_ADA300_ISA_BACKEND=ON to enable)")
 endif() # BUDDY_ADA300_ISA_BACKEND
+
+# ===========================================================================
+# Path D: Ada300HL → rx-ops library calls
+#
+# This path lowers directly from the Ada300HL dialect to calls to the flat C
+# bridge wrappers in thirdparty/rx-ops/src/rx_ops_bridge.c.  No Ada300HW ops
+# or hardware intrinsics are emitted; the generated binary links against
+# librx_ops.a (the rx-ops runtime) instead.
+#
+# Prerequisites: the same stage4b_ada300hl_matmul.mlir produced by the shared
+# stages 1-4b above.
+#
+# Enable with: cmake -DBUDDY_ADA300_RXOPS_PATH=ON
+# ===========================================================================
+option(BUDDY_ADA300_RXOPS_PATH "Enable Ada300 rx-ops library-call path" OFF)
+
+if(BUDDY_ADA300_RXOPS_PATH)
+
+  set(RXOPS_SRC_DIR ${CMAKE_SOURCE_DIR}/thirdparty/rx-ops)
+  set(RXOPS_BRIDGE_DIR ${CMAKE_SOURCE_DIR}/runtime/Ada300)
+  set(RXOPS_LIB ${CMAKE_SOURCE_DIR}/thirdparty/rx-ops/build/librx_ops.a)
+
+  # -- Step D1: lower ada300hl ops to rxops_bridge_* func.call nodes ----------
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/stage_rxops_calls.mlir
+    COMMAND ${BUDDY_BINARY_DIR}/buddy-opt
+              ${ADA300_DUMP_DIR}/stage4b_ada300hl_matmul.mlir
+              -lower-ada300hl-to-rxops
+              -o ${ADA300_DUMP_DIR}/stage_rxops_calls.mlir
+    DEPENDS ${ADA300_DUMP_DIR}/stage4b_ada300hl_matmul.mlir
+            buddy-opt
+    COMMENT "Ada300 Path D Step 1: lower-ada300hl-to-rxops → stage_rxops_calls.mlir"
+    VERBATIM
+  )
+
+  # -- Step D2: finish lowering to LLVM dialect --------------------------------
+  #   -convert-linalg-to-loops     residual linalg after bufferization
+  #   -expand-strided-metadata     fold memref stride/offset arithmetic
+  #   -lower-affine                affine maps → SCF
+  #   -convert-vector-to-llvm      vector ops → LLVM vector intrinsics
+  #   -convert-math-to-llvm        remaining math.* → llvm.intr
+  #   -convert-math-to-libm        unrecognised math.* → libm calls
+  #   -convert-scf-to-cf           SCF → CFG
+  #   -convert-cf-to-llvm          CFG → LLVM dialect branches
+  #   -convert-arith-to-llvm       arith → LLVM dialect ops
+  #   -finalize-memref-to-llvm     memref → llvm.ptr / getelementptr
+  #   NOTE: -llvm-request-c-wrappers is intentionally omitted here.
+  #   The bridge function declarations must NOT get _mlir_ciface_ prefixes
+  #   because they are plain C functions in rx_ops_bridge.c.
+  #   The subgraph0 symbol is called directly by forward.o (which was
+  #   compiled separately with -llvm-request-c-wrappers for _mlir_ciface_forward).
+  #   -convert-func-to-llvm        func → llvm.func
+  #   -reconcile-unrealized-casts  clean up type cast bookkeeping
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/stage_rxops_finished.mlir
+    COMMAND ${BUDDY_BINARY_DIR}/buddy-opt
+              ${ADA300_DUMP_DIR}/stage_rxops_calls.mlir
+              -convert-linalg-to-loops
+              -expand-strided-metadata
+              -lower-affine
+              -convert-vector-to-llvm
+              -convert-math-to-llvm
+              -convert-math-to-libm
+              -convert-scf-to-cf
+              -convert-cf-to-llvm
+              -convert-arith-to-llvm
+              -finalize-memref-to-llvm
+              -llvm-request-c-wrappers
+              -convert-func-to-llvm
+              -reconcile-unrealized-casts
+              -o ${ADA300_DUMP_DIR}/stage_rxops_finished.mlir
+    DEPENDS ${ADA300_DUMP_DIR}/stage_rxops_calls.mlir
+            buddy-opt
+    COMMENT "Ada300 Path D Step 2: finish lowering → stage_rxops_finished.mlir"
+    VERBATIM
+  )
+
+  # -- Step D3: translate MLIR LLVM dialect → LLVM IR (.ll) ------------------
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/subgraph0_rxops.ll
+    COMMAND ${LLVM_TOOLS_BINARY_DIR}/mlir-translate
+              --mlir-to-llvmir
+              ${ADA300_DUMP_DIR}/stage_rxops_finished.mlir
+              -o ${ADA300_DUMP_DIR}/subgraph0_rxops.ll
+    DEPENDS ${ADA300_DUMP_DIR}/stage_rxops_finished.mlir
+            mlir-translate
+    COMMENT "Ada300 Path D Step 3: mlir-translate → subgraph0_rxops.ll"
+    VERBATIM
+  )
+
+  # -- Step D4: compile LLVM IR → object file ---------------------------------
+  #   Use the host clang/clang++ so the object can be linked on the build host
+  #   for testing.  For cross-compilation to RISC-V, replace the compiler and
+  #   add appropriate --target / -mattr flags.
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/subgraph0_rxops.o
+    COMMAND ${LLVM_TOOLS_BINARY_DIR}/llc
+              -filetype=obj
+              -relocation-model=pic
+              -O3
+              ${ADA300_DUMP_DIR}/subgraph0_rxops.ll
+              -o ${ADA300_DUMP_DIR}/subgraph0_rxops.o
+    DEPENDS ${ADA300_DUMP_DIR}/subgraph0_rxops.ll
+    COMMENT "Ada300 Path D Step 4: llc → subgraph0_rxops.o"
+    VERBATIM
+  )
+
+  # -- Step D5: compile the rx-ops bridge wrapper -----------------------------
+  add_custom_command(
+    OUTPUT ${ADA300_DUMP_DIR}/rx_ops_bridge.o
+    COMMAND ${CMAKE_C_COMPILER}
+              -O2
+              -I${RXOPS_BRIDGE_DIR}
+              -I${RXOPS_SRC_DIR}/include
+              -I${RXOPS_SRC_DIR}/include/interface
+              -c ${RXOPS_BRIDGE_DIR}/rx_ops_bridge.c
+              -o ${ADA300_DUMP_DIR}/rx_ops_bridge.o
+    DEPENDS ${RXOPS_BRIDGE_DIR}/rx_ops_bridge.c
+            ${RXOPS_BRIDGE_DIR}/rx_ops_bridge.h
+    COMMENT "Ada300 Path D Step 5: compile rx_ops_bridge.c → rx_ops_bridge.o"
+    VERBATIM
+  )
+
+  # -- Step D6: compile the runner -------------------------------------------
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ada300-rxops-main.o
+    COMMAND ${CMAKE_CXX_COMPILER}
+              -O2
+              -I${CMAKE_SOURCE_DIR}/frontend/Interfaces
+              -c ${CMAKE_CURRENT_SOURCE_DIR}/ada300-rxops-main.cpp
+              -o ${CMAKE_CURRENT_BINARY_DIR}/ada300-rxops-main.o
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/ada300-rxops-main.cpp
+    COMMENT "Ada300 Path D Step 6: compile ada300-rxops-main.cpp → ada300-rxops-main.o"
+    VERBATIM
+  )
+
+  # -- Step D7: link everything → runner binary ------------------------------
+  # mlir_c_runner_utils provides memrefCopy (used by memref.copy lowering).
+  # -fopenmp resolves OpenMP symbols from librx_ops.a (built with OpenMP).
+  add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/ada300-rxops-runner
+    COMMAND ${CMAKE_CXX_COMPILER}
+              ${ADA300_DUMP_DIR}/subgraph0_rxops.o
+              ${ADA300_DUMP_DIR}/rx_ops_bridge.o
+              ${CMAKE_CURRENT_BINARY_DIR}/forward.o
+              ${CMAKE_CURRENT_BINARY_DIR}/ada300-rxops-main.o
+              -Wl,--whole-archive ${RXOPS_LIB} -Wl,--no-whole-archive
+              $<TARGET_FILE:mlir_c_runner_utils>
+              -lm -lstdc++ -fopenmp
+              -o ${CMAKE_CURRENT_BINARY_DIR}/ada300-rxops-runner
+    DEPENDS
+      ${ADA300_DUMP_DIR}/subgraph0_rxops.o
+      ${ADA300_DUMP_DIR}/rx_ops_bridge.o
+      ${CMAKE_CURRENT_BINARY_DIR}/forward.o
+      ${CMAKE_CURRENT_BINARY_DIR}/ada300-rxops-main.o
+      ${RXOPS_LIB}
+      mlir_c_runner_utils
+    COMMENT "Ada300 Path D Step 7: link → ada300-rxops-runner"
+    VERBATIM
+  )
+
+  # Convenience target: produce the LLVM IR dump only
+  add_custom_target(ada300-rxops-ll
+    DEPENDS ${ADA300_DUMP_DIR}/subgraph0_rxops.ll
+    COMMENT "Ada300 Path D: LLVM IR with rx-ops bridge calls"
+  )
+
+  # Convenience target: produce the model object files only
+  add_custom_target(ada300-rxops
+    DEPENDS
+      ${ADA300_DUMP_DIR}/subgraph0_rxops.o
+      ${ADA300_DUMP_DIR}/rx_ops_bridge.o
+    COMMENT "Ada300 Path D: rx-ops library-call path object files ready"
+  )
+
+  # Convenience target: fully linked runner binary
+  add_custom_target(ada300-rxops-run
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ada300-rxops-runner
+    COMMENT "Ada300 Path D: runner binary ready → run with ./ada300-rxops-runner arg0.data"
+  )
+
+else()
+  message(STATUS "Ada300: rx-ops library-call path disabled (set BUDDY_ADA300_RXOPS_PATH=ON to enable)")
+endif() # BUDDY_ADA300_RXOPS_PATH

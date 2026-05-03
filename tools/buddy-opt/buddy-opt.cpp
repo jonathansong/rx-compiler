@@ -113,6 +113,7 @@ void registerLinalgToAda300HLPass();
 void registerTosaToAda300HLPass();
 void registerLowerAda300HLToAda300HWPass();
 void registerLowerAda300HWToLLVMPass();
+void registerLowerAda300HLToRxOpsPass();
 } // namespace buddy
 } // namespace mlir
 
@@ -178,6 +179,7 @@ int main(int argc, char **argv) {
   mlir::buddy::registerTosaToAda300HLPass();
   mlir::buddy::registerLowerAda300HLToAda300HWPass();
   mlir::buddy::registerLowerAda300HWToLLVMPass();
+  mlir::buddy::registerLowerAda300HLToRxOpsPass();
   // Register gpu passes
   mlir::buddy::registerConvertMemcpyToGPUPass();
   mlir::buddy::registerLegalizeShmemOutliningPass();
