@@ -49,6 +49,36 @@ from model import Ada300Model
 
 
 # ---------------------------------------------------------------------------
+# Per-op device assignment
+#
+# Set each flag to "ada300" to dispatch the op to the Ada300 SNPU via ivshmem,
+# or to "host" (or any other value) to run it on the host CPU (RXOPS_C).
+# ---------------------------------------------------------------------------
+DEVICE_MATMUL = "ada300"
+DEVICE_ADD    = "ada300"
+DEVICE_EXP    = "host"
+DEVICE_SQRT   = "host"
+
+
+def _dev_prefix(flag: str) -> str:
+    """Leading fragment for attr dicts that have other attrs after device.
+
+    ada300 → ' device = "ada300",'   (followed by the remaining attrs)
+    other  → ''                       (remaining attrs start the dict)
+    """
+    return f' device = "{flag}",' if flag == "ada300" else ""
+
+
+def _dev_block(flag: str) -> str:
+    """Complete attr block for ops where device is the only attribute.
+
+    ada300 → '{ device = "ada300" } '
+    other  → ''                         (no attr block emitted)
+    """
+    return f'{{ device = "{flag}" }} ' if flag == "ada300" else ""
+
+
+# ---------------------------------------------------------------------------
 # MLIR type helpers
 # ---------------------------------------------------------------------------
 
@@ -136,14 +166,14 @@ def emit_top_mlir(ep, func_args, val_map, weight_file):
 
             ops_lines.append(
                 f'    {mm_v} = "top.MatMul"({input_v}, {weight_v}, {none_val()}) {{'
-                f' device = "ada300", do_relu = false, hdim_is_batch = false, keep_dims = true,'
+                f'{_dev_prefix(DEVICE_MATMUL)} do_relu = false, hdim_is_batch = false, keep_dims = true,'
                 f' left_transpose = false, output_transpose = false,'
                 f' relu_limit = -1.000000e+00 : f64, right_transpose = false'
                 f' }} : ({input_t}, {weight_t}, none) -> {out_t}'
             )
             ops_lines.append(
                 f'    {add_v} = "top.Add"({bias_v}, {mm_v}) {{'
-                f' device = "ada300", do_relu = false, is_scalar = false,'
+                f'{_dev_prefix(DEVICE_ADD)} do_relu = false, is_scalar = false,'
                 f' relu_limit = -1.000000e+00 : f64'
                 f' }} : ({bias_t}, {out_t}) -> {out_t}'
             )
@@ -157,19 +187,19 @@ def emit_top_mlir(ep, func_args, val_map, weight_file):
             src_v, src_t = val_map[node.args[0].name]
             v = new_val()
             ops_lines.append(
-                f'    {v} = "top.Exp"({src_v}) {{device = "ada300"}} : ({src_t}) -> {src_t}'
+                f'    {v} = "top.Exp"({src_v}) {_dev_block(DEVICE_EXP)}: ({src_t}) -> {src_t}'
             )
             val_map[node.name] = (v, src_t)
             continue
 
         # ------------------------------------------------------------------
-        # aten.sqrt  →  top.Sqrt  (device=ada300: dispatched to SNPU)
+        # aten.sqrt  →  top.Sqrt
         # ------------------------------------------------------------------
         if target.endswith("sqrt.default"):
             src_v, src_t = val_map[node.args[0].name]
             v = new_val()
             ops_lines.append(
-                f'    {v} = "top.Sqrt"({src_v}) {{ device = "ada300" }} : ({src_t}) -> {src_t}'
+                f'    {v} = "top.Sqrt"({src_v}) {_dev_block(DEVICE_SQRT)}: ({src_t}) -> {src_t}'
             )
             val_map[node.name] = (v, src_t)
             continue

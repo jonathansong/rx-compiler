@@ -9,7 +9,7 @@ declare void @memrefCopy(i64, ptr, ptr)
 
 declare i32 @rxops_bridge_exp_f32(ptr, ptr, i64)
 
-declare i32 @rxops_bridge_ada300_sqrt_f32(ptr, ptr, i64)
+declare i32 @rxops_bridge_sqrt_f32(ptr, ptr, i64)
 
 declare i32 @rxops_bridge_ada300_matmul_f32(ptr, ptr, ptr, i64, i64, i64)
 
@@ -169,7 +169,7 @@ define { ptr, ptr, i64, [2 x i64], [2 x i64] } @subgraph0(ptr %0, ptr %1, i64 %2
   %168 = inttoptr i64 %167 to ptr
   %169 = ptrtoint ptr %159 to i64
   %170 = inttoptr i64 %169 to ptr
-  %171 = call i32 @rxops_bridge_ada300_sqrt_f32(ptr %170, ptr %168, i64 128)
+  %171 = call i32 @rxops_bridge_sqrt_f32(ptr %170, ptr %168, i64 128)
   %172 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 8192) to i64))
   %173 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } undef, ptr %172, 0
   %174 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } %173, ptr %172, 1

@@ -2,7 +2,7 @@ module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform =
   llvm.func @memrefCopy(i64, !llvm.ptr, !llvm.ptr)
   llvm.func @malloc(i64) -> !llvm.ptr
   llvm.func @rxops_bridge_exp_f32(!llvm.ptr, !llvm.ptr, i64) -> i32
-  llvm.func @rxops_bridge_ada300_sqrt_f32(!llvm.ptr, !llvm.ptr, i64) -> i32
+  llvm.func @rxops_bridge_sqrt_f32(!llvm.ptr, !llvm.ptr, i64) -> i32
   llvm.func @rxops_bridge_ada300_matmul_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32
   llvm.func @rxops_bridge_ada300_add_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32
   llvm.func @subgraph0(%arg0: !llvm.ptr, %arg1: !llvm.ptr, %arg2: i64, %arg3: i64, %arg4: i64, %arg5: i64, %arg6: i64, %arg7: !llvm.ptr, %arg8: !llvm.ptr, %arg9: i64, %arg10: i64, %arg11: i64, %arg12: i64, %arg13: i64, %arg14: !llvm.ptr, %arg15: !llvm.ptr, %arg16: i64, %arg17: i64, %arg18: i64, %arg19: i64, %arg20: i64, %arg21: !llvm.ptr, %arg22: !llvm.ptr, %arg23: i64, %arg24: i64, %arg25: i64, %arg26: i64, %arg27: i64, %arg28: !llvm.ptr, %arg29: !llvm.ptr, %arg30: i64, %arg31: i64, %arg32: i64, %arg33: i64, %arg34: i64) -> !llvm.struct<(ptr, ptr, i64, array<2 x i64>, array<2 x i64>)> attributes {llvm.emit_c_interface} {
@@ -260,7 +260,7 @@ module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform =
     %233 = llvm.inttoptr %232 : i64 to !llvm.ptr
     %234 = llvm.ptrtoint %222 : !llvm.ptr to i64
     %235 = llvm.inttoptr %234 : i64 to !llvm.ptr
-    %236 = llvm.call @rxops_bridge_ada300_sqrt_f32(%235, %233, %41) : (!llvm.ptr, !llvm.ptr, i64) -> i32
+    %236 = llvm.call @rxops_bridge_sqrt_f32(%235, %233, %41) : (!llvm.ptr, !llvm.ptr, i64) -> i32
     %237 = llvm.mlir.constant(128 : index) : i64
     %238 = llvm.mlir.constant(64 : index) : i64
     %239 = llvm.mlir.constant(1 : index) : i64

@@ -21,14 +21,18 @@
 #   Op         Backend        Location
 #   ────────   ───────────    ────────────────────────────────────────
 #   MatMul     RXOPS_ADA300   Ada300 RISC-V SNPU (QEMU, ivshmem)
-#   Sqrt       RXOPS_ADA300   Ada300 RISC-V SNPU (QEMU, ivshmem)
+#   Add        RXOPS_ADA300   Ada300 RISC-V SNPU (QEMU, ivshmem)
 #   Exp        RXOPS_C        Host x86 CPU
-#   Add        RXOPS_C        Host x86 CPU
+#   Sqrt       RXOPS_C        Host x86 CPU
+#
+#   (Controlled by DEVICE_* flags in ada300-import.py — edit there to change routing.)
 #
 # Lowering path (host runner):
 #
 #   ada300-import.py annotates Top ops with device = "ada300" for SNPU ops.
 #
+#   ada300-import.py  (PyTorch → Top dialect MLIR)
+#     ↓ python ada300-import.py --output-dir output/
 #   subgraph0_top.mlir  (Top dialect — ops carry device attr)
 #     ↓ tpuc-opt --convert-top-to-rxops
 #         ops with device="ada300"  → llvm.call @rxops_bridge_ada300_<op>_f32
@@ -36,7 +40,7 @@
 #     ↓ mlir-opt  (bufferize + lower)
 #     ↓ mlir-translate --mlir-to-llvmir
 #     ↓ llc -filetype=obj → subgraph0_rxops.o
-#     ↓ + host/rx_ops_bridge_hetero.o  (ada300_* → ivshmem, plain → RXOPS_C)
+    #     ↓ + rx_ops_bridge.o              (all ops; ada300_*→ivshmem via #ifndef __riscv)
 #     ↓ + host/hetero_shmem_host.o     (shm_open / mmap transport)
 #     ↓ + host/ada300-hetero-main.o
 #     ↓ link → ada300-hetero-runner
@@ -143,6 +147,9 @@ message(STATUS "Ada300Hetero: LLC_SYSTEM = ${LLC_SYSTEM}")
 # ===========================================================================
 option(HETERO_HOST "Build Ada300 heterogeneous host runner" ON)
 
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+message(STATUS "Ada300Hetero: Python3 = ${Python3_EXECUTABLE}")
+
 if(HETERO_HOST)
 
   if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
@@ -150,6 +157,20 @@ if(HETERO_HOST)
   else()
     set(_HETERO_TPUC_DEP tpuc-opt)
   endif()
+
+  # -- Step 0: run ada300-import.py → subgraph0_top.mlir + weights -----------
+  add_custom_command(
+    OUTPUT  "${HETERO_DUMP_DIR}/subgraph0_top.mlir"
+            "${HETERO_DUMP_DIR}/subgraph0_top_weight.npz"
+    COMMAND "${Python3_EXECUTABLE}"
+              "${HETERO_SRC_DIR}/ada300-import.py"
+              --output-dir "${HETERO_DUMP_DIR}"
+    WORKING_DIRECTORY "${HETERO_SRC_DIR}"
+    DEPENDS "${HETERO_SRC_DIR}/ada300-import.py"
+            "${HETERO_SRC_DIR}/model.py"
+    COMMENT "Hetero Step 0: ada300-import.py → subgraph0_top.mlir"
+    VERBATIM
+  )
 
   # -- Step 1: --convert-top-to-rxops ----------------------------------------
   add_custom_command(
@@ -227,29 +248,34 @@ if(HETERO_HOST)
     VERBATIM
   )
 
-  # -- Step 5b: compile the hetero bridge (C) --------------------------------
-  #    Provides two sets of symbols:
-  #      rxops_bridge_ada300_matmul_f32 / rxops_bridge_ada300_sqrt_f32
-  #        → hetero_dispatch_* (ivshmem → Ada300 SNPU in QEMU)
-  #      rxops_bridge_exp_f32 / rxops_bridge_add_f32 / rxops_bridge_log_f32 …
-  #        → local RXOPS_C (reference C, runs on the host x86)
-  #    The compiler emits the right symbol per op based on device = "ada300".
+  # -- Step 5b: compile the ops bridge (C) -----------------------------------
+  #    rx_ops_bridge.c uses #ifndef __riscv to auto-select the implementation:
+  #      x86 host  → ivshmem dispatch to QEMU RISC-V device
+  #      __riscv   → RXOPS_ADA300 hardware backend directly (bare-metal only)
+  #    No explicit compile flag needed; the target architecture decides.
   add_custom_command(
-    OUTPUT "${HETERO_DUMP_DIR}/rx_ops_bridge_hetero.o"
+    OUTPUT "${HETERO_DUMP_DIR}/rx_ops_bridge.o"
     COMMAND "${CMAKE_C_COMPILER}"
               -O2
               -I${HETERO_SRC_DIR}
               -I${HETERO_SRC_DIR}/include
               -I${RXOPS_SRC_DIR}/include
               -I${RXOPS_SRC_DIR}/include/interface
-              -c "${HETERO_SRC_DIR}/host/rx_ops_bridge_hetero.c"
-              -o "${HETERO_DUMP_DIR}/rx_ops_bridge_hetero.o"
-    DEPENDS "${HETERO_SRC_DIR}/host/rx_ops_bridge_hetero.c"
+              -c "${HETERO_SRC_DIR}/rx_ops_bridge.c"
+              -o "${HETERO_DUMP_DIR}/rx_ops_bridge.o"
+    DEPENDS "${HETERO_SRC_DIR}/rx_ops_bridge.c"
             "${HETERO_SRC_DIR}/rx_ops_bridge.h"
             "${HETERO_SRC_DIR}/include/hetero_shmem.h"
-    COMMENT "Hetero Step 5b: compile rx_ops_bridge_hetero.c"
+    COMMENT "Hetero Step 5b: compile rx_ops_bridge.c (ivshmem dispatch via __riscv auto-detect)"
     VERBATIM
   )
+
+  set(_HETERO_BRIDGE_OBJS
+      "${HETERO_DUMP_DIR}/hetero_shmem_host.o"
+      "${HETERO_DUMP_DIR}/rx_ops_bridge.o")
+  set(_HETERO_BRIDGE_DEPS
+      "${HETERO_DUMP_DIR}/hetero_shmem_host.o"
+      "${HETERO_DUMP_DIR}/rx_ops_bridge.o")
 
   # -- Step 6: compile the host runner (C++) ---------------------------------
   add_custom_command(
@@ -272,16 +298,14 @@ if(HETERO_HOST)
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/ada300-hetero-runner"
     COMMAND "${CMAKE_CXX_COMPILER}"
               "${HETERO_DUMP_DIR}/subgraph0_rxops.o"
-              "${HETERO_DUMP_DIR}/hetero_shmem_host.o"
-              "${HETERO_DUMP_DIR}/rx_ops_bridge_hetero.o"
+              ${_HETERO_BRIDGE_OBJS}
               "${CMAKE_CURRENT_BINARY_DIR}/ada300-hetero-main.o"
               -Wl,--whole-archive "${RXOPS_LIB}" -Wl,--no-whole-archive
               -lm -lstdc++ -fopenmp -lrt
               -o "${CMAKE_CURRENT_BINARY_DIR}/ada300-hetero-runner"
     DEPENDS
       "${HETERO_DUMP_DIR}/subgraph0_rxops.o"
-      "${HETERO_DUMP_DIR}/hetero_shmem_host.o"
-      "${HETERO_DUMP_DIR}/rx_ops_bridge_hetero.o"
+      ${_HETERO_BRIDGE_DEPS}
       "${CMAKE_CURRENT_BINARY_DIR}/ada300-hetero-main.o"
       "${RXOPS_LIB}"
     COMMENT "Hetero Step 7: link → ada300-hetero-runner"
@@ -404,10 +428,11 @@ if(HETERO_DEVICE)
     "${_DEV_OBJ_DIR}/hetero_shmem_device.o"
     "${HETERO_SRC_DIR}/device/hetero_shmem_device.c")
 
-  # -- Step DC: compile Ada300 rx-ops bridge (RXOPS_ADA300 backend) ---------
+  # -- Step DC: compile rx-ops bridge for device (rx_ops_bridge.c shared with
+  #             host; rxnn_c_init is declared weak so it is safely absent here)
   ada300_hetero_compile(
-    "${_DEV_OBJ_DIR}/rx_ops_bridge_ada300.o"
-    "${HETERO_SRC_DIR}/rx_ops_bridge_ada300.c")
+    "${_DEV_OBJ_DIR}/rx_ops_bridge.o"
+    "${HETERO_SRC_DIR}/rx_ops_bridge.c")
 
   # -- Step DD: compile BSP sources ------------------------------------------
   ada300_hetero_compile(
@@ -485,7 +510,7 @@ if(HETERO_DEVICE)
               ${_BSP_OBJS}
               "${_DEV_OBJ_DIR}/ada300-hetero-main.o"
               "${_DEV_OBJ_DIR}/hetero_shmem_device.o"
-              "${_DEV_OBJ_DIR}/rx_ops_bridge_ada300.o"
+              "${_DEV_OBJ_DIR}/rx_ops_bridge.o"
               ${_RXOPS_OBJS}
               $<$<BOOL:${ADA300_NEWLIB_SYSROOT}>:-Wl,--start-group>
               $<$<BOOL:${ADA300_NEWLIB_SYSROOT}>:-lm>
@@ -495,7 +520,7 @@ if(HETERO_DEVICE)
       ${_BSP_OBJS}
       "${_DEV_OBJ_DIR}/ada300-hetero-main.o"
       "${_DEV_OBJ_DIR}/hetero_shmem_device.o"
-      "${_DEV_OBJ_DIR}/rx_ops_bridge_ada300.o"
+      "${_DEV_OBJ_DIR}/rx_ops_bridge.o"
       ${_RXOPS_OBJS}
     COMMENT "Ada300Hetero Device Step DF: link → ada300-hetero-device.elf"
     VERBATIM

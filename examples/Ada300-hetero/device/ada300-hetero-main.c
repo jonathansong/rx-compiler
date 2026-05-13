@@ -140,7 +140,7 @@ int main(void)
             }
 
             uint64_t t0 = rdtime();
-            int rc = rxops_bridge_matmul_f32(C, A, B, (int64_t)M, (int64_t)N, (int64_t)K);
+            int rc = rxops_bridge_ada300_matmul_f32(C, A, B, (int64_t)M, (int64_t)N, (int64_t)K);
             uint64_t t1 = rdtime();
 
             printf("[hetero-dev]   MatMul done in %llu ticks, rc=%d\n",
@@ -174,7 +174,7 @@ int main(void)
             }
 
             uint64_t t0 = rdtime();
-            int rc = rxops_bridge_sqrt_f32(out_buf, in, (int64_t)n);
+            int rc = rxops_bridge_ada300_sqrt_f32(out_buf, in, (int64_t)n);
             uint64_t t1 = rdtime();
 
             printf("[hetero-dev]   Sqrt done in %llu ticks, rc=%d\n",
@@ -209,7 +209,7 @@ int main(void)
             }
 
             uint64_t t0 = rdtime();
-            int rc = rxops_bridge_exp_f32(out_buf, in, (int64_t)n);
+            int rc = rxops_bridge_ada300_exp_f32(out_buf, in, (int64_t)n);
             uint64_t t1 = rdtime();
 
             printf("[hetero-dev]   Exp done in %llu ticks, rc=%d\n",
@@ -243,7 +243,7 @@ int main(void)
             }
 
             uint64_t t0 = rdtime();
-            int rc = rxops_bridge_add_f32(out_buf, in0, in1, (int64_t)n);
+            int rc = rxops_bridge_ada300_add_f32(out_buf, in0, in1, (int64_t)n);
             uint64_t t1 = rdtime();
 
             printf("[hetero-dev]   Add done in %llu ticks, rc=%d\n",

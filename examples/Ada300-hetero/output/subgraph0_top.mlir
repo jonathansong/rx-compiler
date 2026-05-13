@@ -25,7 +25,7 @@ module attributes {module.chip = "ALL", module.platform = "ONNX",
     %v0 = "top.MatMul"(%arg4, %arg0, %none) { device = "ada300", do_relu = false, hdim_is_batch = false, keep_dims = true, left_transpose = false, output_transpose = false, relu_limit = -1.000000e+00 : f64, right_transpose = false } : (tensor<1x64xf32>, tensor<64x128xf32>, none) -> tensor<1x128xf32>
     %v1 = "top.Add"(%arg1, %v0) { device = "ada300", do_relu = false, is_scalar = false, relu_limit = -1.000000e+00 : f64 } : (tensor<1x128xf32>, tensor<1x128xf32>) -> tensor<1x128xf32>
     %v2 = "top.Exp"(%v1) : (tensor<1x128xf32>) -> tensor<1x128xf32>
-    %v3 = "top.Sqrt"(%v2) { device = "ada300" } : (tensor<1x128xf32>) -> tensor<1x128xf32>
+    %v3 = "top.Sqrt"(%v2) : (tensor<1x128xf32>) -> tensor<1x128xf32>
     %v4 = "top.MatMul"(%v3, %arg2, %none) { device = "ada300", do_relu = false, hdim_is_batch = false, keep_dims = true, left_transpose = false, output_transpose = false, relu_limit = -1.000000e+00 : f64, right_transpose = false } : (tensor<1x128xf32>, tensor<128x64xf32>, none) -> tensor<1x64xf32>
     %v5 = "top.Add"(%arg3, %v4) { device = "ada300", do_relu = false, is_scalar = false, relu_limit = -1.000000e+00 : f64 } : (tensor<1x64xf32>, tensor<1x64xf32>) -> tensor<1x64xf32>
     return %v5 : tensor<1x64xf32>

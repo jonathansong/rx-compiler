@@ -71,8 +71,9 @@ int rxops_bridge_add_f32(float *out, const float *in0, const float *in1,
  * Ada300 SNPU backend variants
  *
  * Emitted by TopToRxOps when the Top op carries `device = "ada300"`.
- * Implemented in host/rx_ops_bridge_hetero.c (ivshmem dispatch) on the
- * host side, and in rx_ops_bridge_ada300.c on the baremetal device side.
+ * Implemented in rx_ops_bridge.c.  The target architecture auto-selects:
+ *   #ifndef __riscv (x86 host): ivshmem dispatch to QEMU RISC-V device.
+ *   #ifdef  __riscv (device):   RXOPS_ADA300 hardware backend directly.
  * -------------------------------------------------------------------------*/
 
 int rxops_bridge_ada300_matmul_f32(float *C, const float *A, const float *B,

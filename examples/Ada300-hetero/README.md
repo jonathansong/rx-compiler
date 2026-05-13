@@ -12,8 +12,8 @@ are dispatched to two different compute units:
 
 | Compute Unit | Backend | Ops |
 |---|---|---|
-| Host x86 CPU | `RXOPS_C` (reference C) | `Exp` |
-| Ada300 RISC-V SNPU (QEMU) | `RXOPS_ADA300` (`xadatmm`/`xadacv` ISA) | `MatMul`, `Add`, `Sqrt` |
+| Host x86 CPU | `RXOPS_C` (reference C) | `Exp`, `Sqrt` |
+| Ada300 RISC-V SNPU (QEMU) | `RXOPS_ADA300` (`xadatmm`/`xadacv` ISA) | `MatMul`, `Add` |
 
 The two units communicate via a **64 MiB POSIX shared memory region**
 (`/dev/shm/ada300_bar`) that QEMU maps into the RISC-V guest at physical
@@ -36,7 +36,7 @@ input [1×64]
   ├─ Add(fc1_bias [1×128])        ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
   │
   ├─ Exp [1×128]                  ◄─── RUNS ON HOST (RXOPS_C)
-  ├─ Sqrt [1×128]                 ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
+  ├─ Sqrt [1×128]                 ◄─── RUNS ON HOST (RXOPS_C)
   │
   ├─ MatMul(fc2_weight [128×64])  ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
   ├─ Add(fc2_bias [1×64])         ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
@@ -84,17 +84,20 @@ Expected output:
 [hetero-dev] Polling ivshmem at 0x42000000 for commands...
 [hetero-dev] cmd #1: matmul [1×128] = [1×64] * [64×128]
 [hetero-dev]   MatMul done in ~300000 ticks, rc=0
-[hetero-dev] cmd #2: sqrt [128 elements]
-[hetero-dev]   Sqrt done in ~8000 ticks, rc=0
+[hetero-dev] cmd #2: add [128 elements]
+[hetero-dev]   Add done in ~5000 ticks, rc=0
 [hetero-dev] cmd #3: matmul [1×64] = [1×128] * [128×64]
 [hetero-dev]   MatMul done in ~80000 ticks, rc=0
+[hetero-dev] cmd #4: add [64 elements]
+[hetero-dev]   Add done in ~2000 ticks, rc=0
 ```
 
 > **Note:** The output is 1.7627 rather than the reference 1.7629 because the
 > Ada300 SNPU has no fp32 matmul kernel.  The device firmware converts fp32 →
 > fp16 before calling `rxops_matmul`, runs the Ada300 fp16 kernel, then
 > converts fp16 → fp32.  The ~0.01% difference is normal fp16 rounding
-> propagated through MatMul and Sqrt.
+> propagated through MatMul.  `Exp` and `Sqrt` run on the host CPU (RXOPS_C)
+> with full fp32 precision.
 
 ---
 
@@ -107,15 +110,19 @@ examples/ada300-hetero/
 │   └── run-ada300-hetero.sh.in       ← script template for run-ada300-hetero target
 ├── include/
 │   └── hetero_shmem.h                ← shared struct/offset definitions (host + device)
+├── ada300-import.py               ← PyTorch → Top MLIR importer; edit DEVICE_* flags here
+├── model.py                       ← Ada300Model definition
 ├── host/
-│   ├── ada300-hetero-main.cpp        ← host orchestrator (opens shmem, calls subgraph0)
-│   ├── hetero_shmem_host.c           ← shm_open/mmap transport + dispatch loop
-│   └── rx_ops_bridge_hetero.c        ← bridge: matmul→ivshmem, exp/sqrt/add→RXOPS_C
+│   ├── ada300-hetero-main.cpp     ← host orchestrator (opens shmem, calls subgraph0)
+│   └── hetero_shmem_host.c       ← shm_open/mmap transport + dispatch helpers
 ├── device/
-│   ├── ada300-hetero-main.c          ← persistent RISC-V firmware (polling loop)
-│   └── hetero_shmem_device.c         ← MMIO-based shmem access on the RISC-V side
-├── rx_ops_bridge_ada300.c            ← device-side bridge: all ops → RXOPS_ADA300
-└── rx_ops_bridge.h                   ← shared bridge ABI declaration
+│   ├── ada300-hetero-main.c      ← persistent RISC-V firmware (polling loop)
+│   └── hetero_shmem_device.c    ← MMIO-based shmem access on the RISC-V side
+├── rx_ops_bridge.c               ← op bridge shared by host + device builds
+│                                    #ifndef __riscv (x86): ada300_*→ivshmem dispatch
+│                                    #ifdef  __riscv (device): ada300_*→RXOPS_ADA300 hw
+│                                    plain ops always → RXOPS_C
+└── rx_ops_bridge.h               ← bridge ABI declaration
 ```
 
 External files modified for this example:
@@ -226,27 +233,30 @@ before writing status).
   copies C from the result buffer.  Returns 0 on success, -1 on timeout or
   device error.
 
-**`rx_ops_bridge_hetero.c`** — dispatch bridge
+**`rx_ops_bridge.c`** — op bridge (host + device, auto-selects via `#ifndef __riscv`)
 
 Provides two classes of symbols, resolved at link time:
 
-| Symbol | Emitted when | Dispatch |
-|---|---|---|
-| `rxops_bridge_ada300_matmul_f32` | `device = "ada300"` on `top.MatMul` | `hetero_dispatch_matmul` → ivshmem → QEMU |
-| `rxops_bridge_ada300_sqrt_f32` | `device = "ada300"` on `top.Sqrt` | `hetero_dispatch_sqrt` → ivshmem → QEMU |
-| `rxops_bridge_ada300_add_f32` | `device = "ada300"` on `top.Add` | `hetero_dispatch_add` → ivshmem → QEMU |
-| `rxops_bridge_ada300_exp_f32` | `device = "ada300"` on `top.Exp` | delegates to host `rxops_bridge_exp_f32` (RXOPS_C) |
-| `rxops_bridge_exp_f32` | no `device` attr on `top.Exp` | `rxops_exp` via RXOPS_C (local host x86) |
-| `rxops_bridge_add_f32` | no `device` attr on `top.Add` | `rxops_add` via RXOPS_C (local host x86) |
-| `rxops_bridge_log_f32` | — | `rxops_log` via RXOPS_C (local host x86) |
-| `rxops_bridge_rsqrt_f32` | — | `rxops_rsqrt` via RXOPS_C (local host x86) |
+| Symbol | Emitted when | Host dispatch | Device dispatch |
+|---|---|---|---|
+| `rxops_bridge_ada300_matmul_f32` | `device = "ada300"` on `top.MatMul` | `hetero_dispatch_matmul` → ivshmem → QEMU | `rxops_matmul(RXOPS_ADA300)` |
+| `rxops_bridge_ada300_add_f32` | `device = "ada300"` on `top.Add` | `hetero_dispatch_add` → ivshmem → QEMU | `rxops_add(RXOPS_ADA300)` |
+| `rxops_bridge_ada300_exp_f32` | `device = "ada300"` on `top.Exp` | `hetero_dispatch_exp` → ivshmem → QEMU | `rxops_exp(RXOPS_ADA300)` |
+| `rxops_bridge_ada300_sqrt_f32` | `device = "ada300"` on `top.Sqrt` | `hetero_dispatch_sqrt` → ivshmem → QEMU | `rxops_sqrt(RXOPS_ADA300)` |
+| `rxops_bridge_matmul_f32` | no `device` attr on `top.MatMul` | `rxops_matmul` via RXOPS_C | `rxops_matmul` via RXOPS_C |
+| `rxops_bridge_exp_f32` | no `device` attr on `top.Exp` | `rxops_exp` via RXOPS_C | `rxops_exp` via RXOPS_C |
+| `rxops_bridge_sqrt_f32` | no `device` attr on `top.Sqrt` | `rxops_sqrt` via RXOPS_C | `rxops_sqrt` via RXOPS_C |
+| `rxops_bridge_add_f32` | no `device` attr on `top.Add` | `rxops_add` via RXOPS_C | `rxops_add` via RXOPS_C |
+| `rxops_bridge_log_f32` | — | `rxops_log` via RXOPS_C | `rxops_log` via RXOPS_C |
+| `rxops_bridge_rsqrt_f32` | — | `rxops_rsqrt` via RXOPS_C | `rxops_rsqrt` via RXOPS_C |
 
 The dispatch decision is made by the **compiler** (`TopToRxOps` pass) at
-lowering time, not at runtime.  `ada300-import.py` annotates each `top.*`
-op with `device = "ada300"` for all ops assigned to the SNPU; ops without
-that attribute fall through to the generic `rxops_bridge_*` host symbols.
-The linker then resolves each symbol to the appropriate implementation in
-this file.
+lowering time, not at runtime.  `ada300-import.py` sets `DEVICE_MATMUL`,
+`DEVICE_ADD`, `DEVICE_EXP`, and `DEVICE_SQRT` at the top of the file.  Set
+a flag to `"ada300"` to emit the `ada300` variant (ivshmem on host,
+hardware on device); set it to anything else to emit the plain variant
+(RXOPS_C).  The linker resolves each symbol from this single file for both
+host and device builds — no separate `*_hetero.c` file is needed.
 
 **`ada300-hetero-main.cpp`** — host orchestrator
 
@@ -270,10 +280,18 @@ this file.
   `fence w,w`, writes `ctrl->status = DONE`, `fence w,w`, clears
   `ctrl->cmd = IDLE`.
 
-**`rx_ops_bridge_ada300.c`** — Ada300 NPU op wrappers
+**`rx_ops_bridge.c`** — same file, compiled for RISC-V (`#ifdef __riscv` path)
 
-All ops dispatch to `RXOPS_ADA300`.  MatMul requires a fp32 → fp16 → fp32
-round-trip because the Ada300 hardware kernel only supports fp16:
+Provides all symbols declared in `rx_ops_bridge.h`:
+- Plain ops forward to `RXOPS_C` directly (both host and device).
+- `rxops_bridge_ada300_*` variants call `RXOPS_ADA300` hardware kernels.
+
+On device, `rxnn_c_init()` is a `__attribute__((weak))` empty stub so lld
+resolves it locally; on host, only `extern void rxnn_c_init(void)` is
+declared (no definition), so the linker uses the real implementation from
+`librx_ops.a` (placed with `--whole-archive`).  MatMul
+requires a fp32 → fp16 → fp32 round-trip because the Ada300 hardware kernel
+only supports fp16:
 
 ```
 rxops_bridge_matmul_f32(C, A, B, M, N, K)
@@ -296,19 +314,25 @@ main()
     if op == HETERO_OP_MATMUL:
       hetero_device_get_matmul(M,N,K,A,B)
       C = mr_alloc(M*N*4, LPDDR)
-      rc = rxops_bridge_matmul_f32(C, A, B, M, N, K)
+      rc = rxops_bridge_ada300_matmul_f32(C, A, B, M, N, K)
       hetero_device_signal_done(C, M, N, rc)
       mr_free(C)
     elif op == HETERO_OP_SQRT:
       hetero_device_get_sqrt(n, in)
       out = mr_alloc(n*4, LPDDR)
-      rc = rxops_bridge_sqrt_f32(out, in, n)
+      rc = rxops_bridge_ada300_sqrt_f32(out, in, n)
+      hetero_device_signal_done(out, n, 1, rc)
+      mr_free(out)
+    elif op == HETERO_OP_EXP:
+      hetero_device_get_exp(n, in)
+      out = mr_alloc(n*4, LPDDR)
+      rc = rxops_bridge_ada300_exp_f32(out, in, n)
       hetero_device_signal_done(out, n, 1, rc)
       mr_free(out)
     elif op == HETERO_OP_ADD:
       hetero_device_get_add(n, in0, in1)
       out = mr_alloc(n*4, LPDDR)
-      rc = rxops_bridge_add_f32(out, in0, in1, n)
+      rc = rxops_bridge_ada300_add_f32(out, in0, in1, n)
       hetero_device_signal_done(out, n, 1, rc)
       mr_free(out)
     // loop — no qemu_exit(), stays alive for next command
@@ -386,25 +410,31 @@ hetero demo stack and heap.
 The host runner is built from pre-compiled MLIR IR:
 
 ```
+[Step 0 — ninja runs automatically when ada300-import.py or model.py change]
 ada300-import.py
-  annotates Top ops: MatMul/Add/Sqrt → device = "ada300"; Exp → (no attr, runs on host)
+  DEVICE_MATMUL / DEVICE_ADD / DEVICE_EXP / DEVICE_SQRT flags at the top
+  control which ops get device = "ada300" (→ ivshmem) vs. plain (→ RXOPS_C).
+  current defaults: DEVICE_MATMUL="ada300", DEVICE_ADD="ada300",
+                    DEVICE_EXP="host",    DEVICE_SQRT="host"
   └─ output/subgraph0_top.mlir          (Top dialect IR with device attrs)
        │
+  [Step 1]
        ├─ tpuc-opt --convert-top-to-rxops
        │     device="ada300" ops  → llvm.call @rxops_bridge_ada300_<op>_f32
        │     plain ops            → llvm.call @rxops_bridge_<op>_f32
        │     → subgraph0_rxops.mlir
+  [Steps 2–4]
        ├─ mlir-opt --lower-to-llvm         → subgraph0.ll  (LLVM 18 IR)
-       │
        ├─ llvm-as                          → subgraph0.bc  (LLVM 18 bitcode)
        └─ llc-14 -opaque-pointers          → subgraph0.o   (x86-64 object)
             │
+  [Step 7]
             └─ clang++ link:
                   subgraph0.o
-                  ada300-hetero-main.cpp
-                  hetero_shmem_host.c
-                  rx_ops_bridge_hetero.c       ← rxops_bridge_ada300_* → ivshmem
-                                                 rxops_bridge_*        → RXOPS_C
+                  host/ada300-hetero-main.cpp
+                  host/hetero_shmem_host.c
+                  rx_ops_bridge.c              ← #ifndef __riscv: ada300_* → ivshmem dispatch
+                                                 rxops_bridge_*  → RXOPS_C (unchanged)
                   third_party/rx-ops/build_host/librx_ops.a   ← x86 RXOPS_C
                   → ada300-hetero-runner
 ```
@@ -425,7 +455,8 @@ ada300_snpu_sdk/bsp/
   startup.S, uart.c, bsp_main.c, mr_heap.c, mini_printf.c
   └─ + device/ada300-hetero-main.c
   └─ + device/hetero_shmem_device.c
-  └─ + rx_ops_bridge_ada300.c
+  └─ + rx_ops_bridge.c                  (#ifdef __riscv path: ada300_*→RXOPS_ADA300 hw,
+  │                                       rxnn_c_init weak stub, no ivshmem headers)
   └─ + third_party/rx-ops/src/*.c          (RXOPS_ADA300 source)
   └─ + third_party/rx-ops/src/backend/ada300/**/*.S  (Ada300 ASM kernels)
        │
@@ -476,18 +507,7 @@ _mlir_ciface_subgraph0() ──────────────────�
 
   rxops_bridge_exp_f32(hidden)         ← no device attr → local RXOPS_C, no IPC
 
-  rxops_bridge_ada300_sqrt_f32(hid) ← device="ada300" → ivshmem → QEMU
-    pack hdr+in → cmd_buffer
-    ctrl->op_type = SQRT
-    ctrl->cmd = RUN          ─────────────────────────────────►  cmd==RUN detected
-                                                                   op_type == SQRT
-                                                                   get_sqrt(n, in)
-                                                                   rxops_sqrt(ADA300)
-                                                                   memcpy out → result_buf
-                               status = DONE              ◄──── signal_done()
-    poll(status==DONE) ◄──────
-    memcpy out ← result_buf
-    return 0                                                       cmd = IDLE; loop
+  rxops_bridge_sqrt_f32(hidden)        ← no device attr → local RXOPS_C, no IPC
 
   rxops_bridge_ada300_matmul_f32(fc2) ← device="ada300" → ivshmem again
     …same handshake as above…                                         busy-poll → execute

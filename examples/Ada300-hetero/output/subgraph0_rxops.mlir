@@ -5,7 +5,7 @@
 #loc6 = loc("/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top.mlir":22:7)
 module attributes {module.chip = "ALL", module.platform = "ONNX", module.state = "TOSA_F32", module.top_run_mode = "STATIC", module.weight_file = "/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top_weight.npz"} {
   llvm.func @rxops_bridge_exp_f32(!llvm.ptr, !llvm.ptr, i64) -> i32 loc(#loc)
-  llvm.func @rxops_bridge_ada300_sqrt_f32(!llvm.ptr, !llvm.ptr, i64) -> i32 loc(#loc)
+  llvm.func @rxops_bridge_sqrt_f32(!llvm.ptr, !llvm.ptr, i64) -> i32 loc(#loc)
   llvm.func @rxops_bridge_ada300_matmul_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32 loc(#loc)
   llvm.func @rxops_bridge_ada300_add_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32 loc(#loc)
   func.func @subgraph0(%arg0: tensor<64x128xf32> loc("/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top.mlir":18:7), %arg1: tensor<1x128xf32> loc("/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top.mlir":19:7), %arg2: tensor<128x64xf32> loc("/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top.mlir":20:7), %arg3: tensor<1x64xf32> loc("/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top.mlir":21:7), %arg4: tensor<1x64xf32> loc("/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top.mlir":22:7)) -> tensor<1x64xf32> {
@@ -52,7 +52,7 @@ module attributes {module.chip = "ALL", module.platform = "ONNX", module.state =
     %intptr_11 = memref.extract_aligned_pointer_as_index %alloc_9 : memref<1x128xf32> -> index loc(#loc12)
     %27 = arith.index_cast %intptr_11 : index to i64 loc(#loc12)
     %28 = llvm.inttoptr %27 : i64 to !llvm.ptr loc(#loc12)
-    %29 = llvm.call @rxops_bridge_ada300_sqrt_f32(%28, %26, %1) : (!llvm.ptr, !llvm.ptr, i64) -> i32 loc(#loc12)
+    %29 = llvm.call @rxops_bridge_sqrt_f32(%28, %26, %1) : (!llvm.ptr, !llvm.ptr, i64) -> i32 loc(#loc12)
     %30 = bufferization.to_memref %arg2 : memref<128x64xf32> loc(#loc7)
     %alloc_12 = memref.alloc() : memref<1x64xf32> loc(#loc7)
     %intptr_13 = memref.extract_aligned_pointer_as_index %alloc_12 : memref<1x64xf32> -> index loc(#loc7)
