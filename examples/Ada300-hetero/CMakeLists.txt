@@ -21,7 +21,8 @@
 #   Op         Backend        Location
 #   ────────   ───────────    ────────────────────────────────────────
 #   MatMul     RXOPS_ADA300   Ada300 RISC-V SNPU (QEMU, ivshmem)
-#   Exp, Sqrt  RXOPS_C        Host x86 CPU
+#   Sqrt       RXOPS_ADA300   Ada300 RISC-V SNPU (QEMU, ivshmem)
+#   Exp        RXOPS_C        Host x86 CPU
 #   Add        RXOPS_C        Host x86 CPU
 #
 # Lowering path (host runner):

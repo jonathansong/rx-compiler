@@ -56,6 +56,12 @@
 #define HETERO_CMD_RUN           1U   /* host has written a command blob    */
 
 /* -------------------------------------------------------------------------
+ * ctrl->op_type values  (written by the host alongside CMD_RUN)
+ * -------------------------------------------------------------------------*/
+#define HETERO_OP_MATMUL         0U   /* matmul: C[M,N] = A[M,K] * B[K,N]  */
+#define HETERO_OP_SQRT           1U   /* element-wise sqrt: out[i]=sqrt(in[i]) */
+
+/* -------------------------------------------------------------------------
  * ctrl->status values  (written by the device)
  * -------------------------------------------------------------------------*/
 #define HETERO_STATUS_IDLE       0U   /* waiting for next command           */
@@ -74,6 +80,7 @@
 struct hetero_ctrl {
     volatile uint32_t cmd;            /* HETERO_CMD_*   — host triggers     */
     volatile uint32_t cmd_seq;        /* sequence number, host increments   */
+    volatile uint32_t op_type;        /* HETERO_OP_*    — host sets w/ cmd  */
     volatile uint32_t blob_offset;    /* offset of input blob in cmd buf    */
     volatile uint32_t blob_size;      /* byte size of input blob            */
     volatile uint32_t result_offset;  /* offset in result buffer            */
@@ -100,6 +107,22 @@ struct hetero_matmul_hdr {
 };
 
 #define HETERO_MATMUL_HDR_SIZE  ((uint32_t)sizeof(struct hetero_matmul_hdr))
+
+/* -------------------------------------------------------------------------
+ * Sqrt command blob (at cmd_buffer + blob_offset).
+ *
+ * Layout:
+ *   [ hetero_sqrt_hdr ]        4 bytes
+ *   [ float in[n]     ]        n * 4 bytes  (input elements)
+ *
+ * Result buffer (at result_buffer + result_offset):
+ *   [ float out[n]    ]        n * 4 bytes  (sqrt results)
+ * -------------------------------------------------------------------------*/
+struct hetero_sqrt_hdr {
+    int32_t n;    /* number of elements */
+};
+
+#define HETERO_SQRT_HDR_SIZE    ((uint32_t)sizeof(struct hetero_sqrt_hdr))
 
 /* -------------------------------------------------------------------------
  * Physical base address of the ivshmem region in the RISC-V guest.

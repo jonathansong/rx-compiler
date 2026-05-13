@@ -159,7 +159,8 @@ int rxops_bridge_exp_f32(float *out, const float *in, int64_t n)
     init_siso_ada300(&pwcb);
 
     rxops_exp_init(&t_in, &t_out, &pwcb.p);
-    return rxops_exp(&t_in, &t_out, &pwcb.p);
+    int rc = rxops_exp(&t_in, &t_out, &pwcb.p);
+    return (rc == 1 /* RXOPS_TRUE */) ? 0 : -1;
 }
 
 /* =========================================================================
@@ -176,7 +177,8 @@ int rxops_bridge_sqrt_f32(float *out, const float *in, int64_t n)
     init_siso_ada300(&pwcb);
 
     rxops_sqrt_init(&t_in, &t_out, &pwcb.p);
-    return rxops_sqrt(&t_in, &t_out, &pwcb.p);
+    int rc = rxops_sqrt(&t_in, &t_out, &pwcb.p);
+    return (rc == 1 /* RXOPS_TRUE */) ? 0 : -1;
 }
 
 /* =========================================================================
@@ -193,7 +195,8 @@ int rxops_bridge_log_f32(float *out, const float *in, int64_t n)
     init_siso_ada300(&pwcb);
 
     rxops_log_init(&t_in, &t_out, &pwcb.p);
-    return rxops_log(&t_in, &t_out, &pwcb.p);
+    int rc = rxops_log(&t_in, &t_out, &pwcb.p);
+    return (rc == 1 /* RXOPS_TRUE */) ? 0 : -1;
 }
 
 /* =========================================================================
@@ -210,7 +213,8 @@ int rxops_bridge_rsqrt_f32(float *out, const float *in, int64_t n)
     init_siso_ada300(&pwcb);
 
     rxops_rsqrt_init(&t_in, &t_out, &pwcb.p);
-    return rxops_rsqrt(&t_in, &t_out, &pwcb.p);
+    int rc = rxops_rsqrt(&t_in, &t_out, &pwcb.p);
+    return (rc == 1 /* RXOPS_TRUE */) ? 0 : -1;
 }
 
 /* =========================================================================
@@ -315,5 +319,6 @@ int rxops_bridge_add_f32(float *out, const float *in0, const float *in1,
     params.base.cb  = &cb;
 
     rxops_add_init(&t_in0, &t_in1, &t_out, &params);
-    return rxops_add(&t_in0, &t_in1, &t_out, &params);
+    int rc = rxops_add(&t_in0, &t_in1, &t_out, &params);
+    return (rc == 1 /* RXOPS_TRUE */) ? 0 : -1;
 }

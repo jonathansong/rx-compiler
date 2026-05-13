@@ -118,6 +118,26 @@ void hetero_device_get_matmul(int32_t *M, int32_t *N, int32_t *K,
 }
 
 /* -------------------------------------------------------------------------
+ * hetero_device_get_sqrt
+ *
+ * Parse the sqrt command blob from the command buffer.
+ * The blob layout is: [ hetero_sqrt_hdr | float in[n] ]
+ *
+ * n_out is set to the number of elements.
+ * in_out is set to point directly into the (non-volatile) command buffer.
+ * The barrier in poll_cmd ensures ordering; caller treats in_out as read-only.
+ * -------------------------------------------------------------------------*/
+void hetero_device_get_sqrt(int32_t *n_out, const float **in_out)
+{
+    volatile struct hetero_ctrl *ctrl = ctrl_regs();
+    const char *blob = (const char *)cmd_buf_base() + ctrl->blob_offset;
+
+    const struct hetero_sqrt_hdr *hdr = (const struct hetero_sqrt_hdr *)blob;
+    *n_out  = hdr->n;
+    *in_out = (const float *)(blob + sizeof(struct hetero_sqrt_hdr));
+}
+
+/* -------------------------------------------------------------------------
  * hetero_device_signal_done
  *
  * Write C into the result buffer and signal completion to the host.

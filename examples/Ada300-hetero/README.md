@@ -12,8 +12,8 @@ are dispatched to two different compute units:
 
 | Compute Unit | Backend | Ops |
 |---|---|---|
-| Host x86 CPU | `RXOPS_C` (reference C) | `Exp`, `Sqrt`, `Add` |
-| Ada300 RISC-V SNPU (QEMU) | `RXOPS_ADA300` (`xadatmm`/`xadacv` ISA) | `MatMul` |
+| Host x86 CPU | `RXOPS_C` (reference C) | `Exp`, `Add` |
+| Ada300 RISC-V SNPU (QEMU) | `RXOPS_ADA300` (`xadatmm`/`xadacv` ISA) | `MatMul`, `Sqrt` |
 
 The two units communicate via a **64 MiB POSIX shared memory region**
 (`/dev/shm/ada300_bar`) that QEMU maps into the RISC-V guest at physical
@@ -36,7 +36,7 @@ input [1×64]
   ├─ Add(fc1_bias [1×128])        ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
   │
   ├─ Exp [1×128]                  ◄─── RUNS ON HOST (RXOPS_C)
-  ├─ Sqrt [1×128]                 ◄─── RUNS ON HOST (RXOPS_C)
+  ├─ Sqrt [1×128]                 ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
   │
   ├─ MatMul(fc2_weight [128×64])  ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
   ├─ Add(fc2_bias [1×64])         ◄─── DISPATCHED TO Ada300 SNPU (QEMU)
@@ -77,21 +77,24 @@ Expected output:
 [hetero] Inference time: ~10 ms
 [hetero] Output (1×64):
   [1.7627, 1.7627, ...]
-[hetero] Expected ≈ 1.7629 per element
+[hetero] Expected ≈ 1.7627 per element
 
 === Device UART log ===
 [hetero-dev] Ada300 heterogeneous device firmware booted.
-[hetero-dev] Polling ivshmem at 0x42000000 for matmul commands...
+[hetero-dev] Polling ivshmem at 0x42000000 for commands...
 [hetero-dev] cmd #1: matmul [1×128] = [1×64] * [64×128]
 [hetero-dev]   MatMul done in ~300000 ticks, rc=0
-[hetero-dev] cmd #2: matmul [1×64] = [1×128] * [128×64]
+[hetero-dev] cmd #2: sqrt [128 elements]
+[hetero-dev]   Sqrt done in ~8000 ticks, rc=0
+[hetero-dev] cmd #3: matmul [1×64] = [1×128] * [128×64]
 [hetero-dev]   MatMul done in ~80000 ticks, rc=0
 ```
 
 > **Note:** The output is 1.7627 rather than the reference 1.7629 because the
 > Ada300 SNPU has no fp32 matmul kernel.  The device firmware converts fp32 →
 > fp16 before calling `rxops_matmul`, runs the Ada300 fp16 kernel, then
-> converts fp16 → fp32.  The ~0.01% difference is normal fp16 rounding.
+> converts fp16 → fp32.  The ~0.01% difference is normal fp16 rounding
+> propagated through MatMul and Sqrt.
 
 ---
 
@@ -151,6 +154,7 @@ volatile struct hetero_ctrl *ctrl =
 struct hetero_ctrl {
     volatile uint32_t cmd;           // host writes: IDLE=0 / RUN=1
     volatile uint32_t cmd_seq;       // host increments per command
+    volatile uint32_t op_type;       // host writes: MATMUL=0 / SQRT=1
     volatile uint32_t blob_offset;   // byte offset of command blob in cmd buf
     volatile uint32_t blob_size;     // byte size of command blob
     volatile uint32_t result_offset; // byte offset in result buf
@@ -229,8 +233,8 @@ Provides the same flat C ABI as `rx_ops_bridge.h`:
 | Symbol | Dispatch |
 |---|---|
 | `rxops_bridge_matmul_f32` | `hetero_dispatch_matmul` → ivshmem → QEMU |
+| `rxops_bridge_sqrt_f32` | `hetero_dispatch_sqrt` → ivshmem → QEMU |
 | `rxops_bridge_exp_f32` | `rxops_exp` via RXOPS_C (local host x86) |
-| `rxops_bridge_sqrt_f32` | `rxops_sqrt` via RXOPS_C (local host x86) |
 | `rxops_bridge_add_f32` | `rxops_add` via RXOPS_C (local host x86) |
 | `rxops_bridge_log_f32` | `rxops_log` via RXOPS_C (local host x86) |
 | `rxops_bridge_rsqrt_f32` | `rxops_rsqrt` via RXOPS_C (local host x86) |
@@ -284,11 +288,19 @@ main()
   printf "[hetero-dev] booted"
   for(;;):
     hetero_device_poll_cmd()          // busy-spin on ctrl->cmd
-    hetero_device_get_matmul(M,N,K,A,B)
-    C = mr_alloc(M*N*4, LPDDR)
-    rc = rxops_bridge_matmul_f32(C, A, B, M, N, K)
-    hetero_device_signal_done(C, M, N, rc)
-    mr_free(C)
+    op = ctrl->op_type
+    if op == HETERO_OP_MATMUL:
+      hetero_device_get_matmul(M,N,K,A,B)
+      C = mr_alloc(M*N*4, LPDDR)
+      rc = rxops_bridge_matmul_f32(C, A, B, M, N, K)
+      hetero_device_signal_done(C, M, N, rc)
+      mr_free(C)
+    elif op == HETERO_OP_SQRT:
+      hetero_device_get_sqrt(n, in)
+      out = mr_alloc(n*4, LPDDR)
+      rc = rxops_bridge_sqrt_f32(out, in, n)
+      hetero_device_signal_done(out, n, 1, rc)
+      mr_free(out)
     // loop — no qemu_exit(), stays alive for next command
 ```
 
@@ -436,7 +448,18 @@ _mlir_ciface_subgraph0() ──────────────────�
 
   rxops_bridge_add_f32(fc1_bias)    ← local RXOPS_C, no IPC
   rxops_bridge_exp_f32(hidden)      ← local RXOPS_C, no IPC
-  rxops_bridge_sqrt_f32(hidden)     ← local RXOPS_C, no IPC
+  rxops_bridge_sqrt_f32(hidden)     ← ivshmem → QEMU
+    pack hdr+in → cmd_buffer
+    ctrl->op_type = SQRT
+    ctrl->cmd = RUN          ─────────────────────────────────►  cmd==RUN detected
+                                                                   op_type == SQRT
+                                                                   get_sqrt(n, in)
+                                                                   rxops_sqrt(ADA300)
+                                                                   memcpy out → result_buf
+                               status = DONE              ◄──── signal_done()
+    poll(status==DONE) ◄──────
+    memcpy out ← result_buf
+    return 0                                                       cmd = IDLE; loop
 
   rxops_bridge_matmul_f32(fc2)      ← ivshmem again
     …same handshake as above…                                         busy-poll → execute

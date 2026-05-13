@@ -22,7 +22,8 @@
 //   Op         Backend          Location
 //   ────────   ──────────────   ──────────────────────────────────
 //   MatMul     RXOPS_ADA300     Ada300 RISC-V SNPU (QEMU, ivshmem)
-//   Exp, Sqrt  RXOPS_C          Host x86 CPU
+//   Sqrt       RXOPS_ADA300     Ada300 RISC-V SNPU (QEMU, ivshmem)
+//   Exp        RXOPS_C          Host x86 CPU
 //   Add        RXOPS_C          Host x86 CPU
 //
 // Communication mechanism:
@@ -206,8 +207,8 @@ int main(int argc, char **argv) {
 
   // ---- Run inference -------------------------------------------------------
   std::cout << "[hetero] Running heterogeneous inference (input=" << inputVal << ")...\n";
-  std::cout << "[hetero]   MatMul ops → Ada300 SNPU (QEMU, ivshmem)\n";
-  std::cout << "[hetero]   Exp/Sqrt/Add ops → host x86 (RXOPS_C)\n";
+  std::cout << "[hetero]   MatMul/Sqrt ops → Ada300 RISC-V SNPU (QEMU, ivshmem)\n";
+  std::cout << "[hetero]   Exp/Add ops → host x86 (RXOPS_C)\n";
 
   const auto t0 = std::chrono::high_resolution_clock::now();
 

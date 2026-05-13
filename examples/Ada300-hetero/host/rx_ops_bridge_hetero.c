@@ -5,8 +5,8 @@
  * split dispatch:
  *
  *   rxops_bridge_matmul_f32   → ivshmem → Ada300 RISC-V SNPU (QEMU)
+ *   rxops_bridge_sqrt_f32     → ivshmem → Ada300 RISC-V SNPU (QEMU)
  *   rxops_bridge_exp_f32      → local RXOPS_C (reference C, host x86)
- *   rxops_bridge_sqrt_f32     → local RXOPS_C
  *   rxops_bridge_add_f32      → local RXOPS_C
  *   rxops_bridge_log_f32      → local RXOPS_C
  *   rxops_bridge_rsqrt_f32    → local RXOPS_C
@@ -45,6 +45,10 @@ extern int hetero_dispatch_matmul(void *base,
                                    const float *A, const float *B,
                                    float *C,
                                    int32_t M, int32_t N, int32_t K);
+
+/* hetero_dispatch_sqrt — defined in hetero_shmem_host.c. */
+extern int hetero_dispatch_sqrt(void *base,
+                                 const float *in, float *out, int32_t n);
 
 /* -------------------------------------------------------------------------
  * One-time RXOPS_C initialisation (for the local ops: exp, sqrt, add, etc.)
@@ -118,19 +122,11 @@ int rxops_bridge_exp_f32(float *out, const float *in, int64_t n)
 }
 
 /* =========================================================================
- * Sqrt — runs locally on the host via RXOPS_C
+ * Sqrt — dispatched to Ada300 SNPU via ivshmem (shared memory IPC)
  * =========================================================================*/
 int rxops_bridge_sqrt_f32(float *out, const float *in, int64_t n)
 {
-    struct rxops_tensor t_in, t_out;
-    siso_with_cb s;
-
-    ensure_rxops_c();
-    fill_1d(&t_in,  (void *)in,  RXOPS_DTYPE_FLOAT32, n);
-    fill_1d(&t_out, (void *)out, RXOPS_DTYPE_FLOAT32, n);
-    init_siso_c(&s);
-    rxops_sqrt_init(&t_in, &t_out, &s.p);
-    return rxops_sqrt(&t_in, &t_out, &s.p);
+    return hetero_dispatch_sqrt(g_hetero_base, in, out, (int32_t)n);
 }
 
 /* =========================================================================
