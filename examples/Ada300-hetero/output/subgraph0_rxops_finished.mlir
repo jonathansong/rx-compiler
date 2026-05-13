@@ -1,10 +1,10 @@
-module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform = "ONNX", module.state = "TOSA_F32", module.top_run_mode = "STATIC", module.weight_file = "/workspace/rx-mlir-main/examples/ada300-hetero/output/subgraph0_top_weight.npz"} {
+module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform = "ONNX", module.state = "TOSA_F32", module.top_run_mode = "STATIC", module.weight_file = "/workspace/rx-mlir-main/examples/Ada300-hetero/output/subgraph0_top_weight.npz"} {
   llvm.func @memrefCopy(i64, !llvm.ptr, !llvm.ptr)
   llvm.func @malloc(i64) -> !llvm.ptr
   llvm.func @rxops_bridge_exp_f32(!llvm.ptr, !llvm.ptr, i64) -> i32
-  llvm.func @rxops_bridge_sqrt_f32(!llvm.ptr, !llvm.ptr, i64) -> i32
-  llvm.func @rxops_bridge_matmul_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32
-  llvm.func @rxops_bridge_add_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32
+  llvm.func @rxops_bridge_ada300_sqrt_f32(!llvm.ptr, !llvm.ptr, i64) -> i32
+  llvm.func @rxops_bridge_ada300_matmul_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32
+  llvm.func @rxops_bridge_ada300_add_f32(!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32
   llvm.func @subgraph0(%arg0: !llvm.ptr, %arg1: !llvm.ptr, %arg2: i64, %arg3: i64, %arg4: i64, %arg5: i64, %arg6: i64, %arg7: !llvm.ptr, %arg8: !llvm.ptr, %arg9: i64, %arg10: i64, %arg11: i64, %arg12: i64, %arg13: i64, %arg14: !llvm.ptr, %arg15: !llvm.ptr, %arg16: i64, %arg17: i64, %arg18: i64, %arg19: i64, %arg20: i64, %arg21: !llvm.ptr, %arg22: !llvm.ptr, %arg23: i64, %arg24: i64, %arg25: i64, %arg26: i64, %arg27: i64, %arg28: !llvm.ptr, %arg29: !llvm.ptr, %arg30: i64, %arg31: i64, %arg32: i64, %arg33: i64, %arg34: i64) -> !llvm.struct<(ptr, ptr, i64, array<2 x i64>, array<2 x i64>)> attributes {llvm.emit_c_interface} {
     %0 = llvm.mlir.undef : !llvm.struct<(ptr, ptr, i64, array<2 x i64>, array<2 x i64>)>
     %1 = llvm.insertvalue %arg0, %0[0] : !llvm.struct<(ptr, ptr, i64, array<2 x i64>, array<2 x i64>)> 
@@ -152,7 +152,7 @@ module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform =
     %131 = llvm.inttoptr %130 : i64 to !llvm.ptr
     %132 = llvm.ptrtoint %84 : !llvm.ptr to i64
     %133 = llvm.inttoptr %132 : i64 to !llvm.ptr
-    %134 = llvm.call @rxops_bridge_matmul_f32(%129, %131, %133, %40, %41, %42) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32
+    %134 = llvm.call @rxops_bridge_ada300_matmul_f32(%129, %131, %133, %40, %41, %42) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32
     %135 = llvm.mlir.constant(1 : index) : i64
     %136 = llvm.mlir.constant(128 : index) : i64
     %137 = llvm.mlir.constant(1 : index) : i64
@@ -216,7 +216,7 @@ module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform =
     %189 = llvm.inttoptr %188 : i64 to !llvm.ptr
     %190 = llvm.ptrtoint %176 : !llvm.ptr to i64
     %191 = llvm.inttoptr %190 : i64 to !llvm.ptr
-    %192 = llvm.call @rxops_bridge_add_f32(%191, %187, %189, %41) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32
+    %192 = llvm.call @rxops_bridge_ada300_add_f32(%191, %187, %189, %41) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32
     %193 = llvm.mlir.constant(1 : index) : i64
     %194 = llvm.mlir.constant(128 : index) : i64
     %195 = llvm.mlir.constant(1 : index) : i64
@@ -260,7 +260,7 @@ module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform =
     %233 = llvm.inttoptr %232 : i64 to !llvm.ptr
     %234 = llvm.ptrtoint %222 : !llvm.ptr to i64
     %235 = llvm.inttoptr %234 : i64 to !llvm.ptr
-    %236 = llvm.call @rxops_bridge_sqrt_f32(%235, %233, %41) : (!llvm.ptr, !llvm.ptr, i64) -> i32
+    %236 = llvm.call @rxops_bridge_ada300_sqrt_f32(%235, %233, %41) : (!llvm.ptr, !llvm.ptr, i64) -> i32
     %237 = llvm.mlir.constant(128 : index) : i64
     %238 = llvm.mlir.constant(64 : index) : i64
     %239 = llvm.mlir.constant(1 : index) : i64
@@ -324,7 +324,7 @@ module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform =
     %291 = llvm.inttoptr %290 : i64 to !llvm.ptr
     %292 = llvm.ptrtoint %244 : !llvm.ptr to i64
     %293 = llvm.inttoptr %292 : i64 to !llvm.ptr
-    %294 = llvm.call @rxops_bridge_matmul_f32(%289, %291, %293, %40, %42, %41) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32
+    %294 = llvm.call @rxops_bridge_ada300_matmul_f32(%289, %291, %293, %40, %42, %41) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64, i64) -> i32
     %295 = llvm.mlir.constant(1 : index) : i64
     %296 = llvm.mlir.constant(64 : index) : i64
     %297 = llvm.mlir.constant(1 : index) : i64
@@ -388,7 +388,7 @@ module attributes {llvm.data_layout = "", module.chip = "ALL", module.platform =
     %349 = llvm.inttoptr %348 : i64 to !llvm.ptr
     %350 = llvm.ptrtoint %336 : !llvm.ptr to i64
     %351 = llvm.inttoptr %350 : i64 to !llvm.ptr
-    %352 = llvm.call @rxops_bridge_add_f32(%351, %347, %349, %42) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32
+    %352 = llvm.call @rxops_bridge_ada300_add_f32(%351, %347, %349, %42) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64) -> i32
     llvm.return %345 : !llvm.struct<(ptr, ptr, i64, array<2 x i64>, array<2 x i64>)>
   }
   llvm.func @_mlir_ciface_subgraph0(%arg0: !llvm.ptr, %arg1: !llvm.ptr, %arg2: !llvm.ptr, %arg3: !llvm.ptr, %arg4: !llvm.ptr, %arg5: !llvm.ptr) attributes {llvm.emit_c_interface} {

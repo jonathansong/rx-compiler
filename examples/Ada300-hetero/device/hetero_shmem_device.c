@@ -138,6 +138,44 @@ void hetero_device_get_sqrt(int32_t *n_out, const float **in_out)
 }
 
 /* -------------------------------------------------------------------------
+ * hetero_device_get_add
+ *
+ * Parse the add command blob from the command buffer.
+ * The blob layout is: [ hetero_add_hdr | float in0[n] | float in1[n] ]
+ *
+ * n_out  is set to the number of elements.
+ * in0_out and in1_out point directly into the (non-volatile) command buffer.
+ * -------------------------------------------------------------------------*/
+void hetero_device_get_add(int32_t *n_out,
+                            const float **in0_out, const float **in1_out)
+{
+    volatile struct hetero_ctrl *ctrl = ctrl_regs();
+    const char *blob = (const char *)cmd_buf_base() + ctrl->blob_offset;
+
+    const struct hetero_add_hdr *hdr = (const struct hetero_add_hdr *)blob;
+    *n_out   = hdr->n;
+    *in0_out = (const float *)(blob + sizeof(struct hetero_add_hdr));
+    *in1_out = (const float *)(blob + sizeof(struct hetero_add_hdr)
+                               + (size_t)hdr->n * sizeof(float));
+}
+
+/* -------------------------------------------------------------------------
+ * hetero_device_get_exp
+ *
+ * Parse the exp command blob from the command buffer.
+ * The blob layout is: [ hetero_exp_hdr | float in[n] ]
+ * -------------------------------------------------------------------------*/
+void hetero_device_get_exp(int32_t *n_out, const float **in_out)
+{
+    volatile struct hetero_ctrl *ctrl = ctrl_regs();
+    const char *blob = (const char *)cmd_buf_base() + ctrl->blob_offset;
+
+    const struct hetero_exp_hdr *hdr = (const struct hetero_exp_hdr *)blob;
+    *n_out  = hdr->n;
+    *in_out = (const float *)(blob + sizeof(struct hetero_exp_hdr));
+}
+
+/* -------------------------------------------------------------------------
  * hetero_device_signal_done
  *
  * Write C into the result buffer and signal completion to the host.

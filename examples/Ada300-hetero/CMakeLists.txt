@@ -27,12 +27,16 @@
 #
 # Lowering path (host runner):
 #
-#   subgraph0_top.mlir  (Top dialect — same model as examples/Ada300)
+#   ada300-import.py annotates Top ops with device = "ada300" for SNPU ops.
+#
+#   subgraph0_top.mlir  (Top dialect — ops carry device attr)
 #     ↓ tpuc-opt --convert-top-to-rxops
+#         ops with device="ada300"  → llvm.call @rxops_bridge_ada300_<op>_f32
+#         ops without device attr   → llvm.call @rxops_bridge_<op>_f32
 #     ↓ mlir-opt  (bufferize + lower)
 #     ↓ mlir-translate --mlir-to-llvmir
 #     ↓ llc -filetype=obj → subgraph0_rxops.o
-#     ↓ + host/rx_ops_bridge_hetero.o  (matmul → ivshmem, rest → RXOPS_C)
+#     ↓ + host/rx_ops_bridge_hetero.o  (ada300_* → ivshmem, plain → RXOPS_C)
 #     ↓ + host/hetero_shmem_host.o     (shm_open / mmap transport)
 #     ↓ + host/ada300-hetero-main.o
 #     ↓ link → ada300-hetero-runner
@@ -224,7 +228,12 @@ if(HETERO_HOST)
   )
 
   # -- Step 5b: compile the hetero bridge (C) --------------------------------
-  #    Provides rxops_bridge_matmul_f32 (ivshmem path) + local ops (RXOPS_C).
+  #    Provides two sets of symbols:
+  #      rxops_bridge_ada300_matmul_f32 / rxops_bridge_ada300_sqrt_f32
+  #        → hetero_dispatch_* (ivshmem → Ada300 SNPU in QEMU)
+  #      rxops_bridge_exp_f32 / rxops_bridge_add_f32 / rxops_bridge_log_f32 …
+  #        → local RXOPS_C (reference C, runs on the host x86)
+  #    The compiler emits the right symbol per op based on device = "ada300".
   add_custom_command(
     OUTPUT "${HETERO_DUMP_DIR}/rx_ops_bridge_hetero.o"
     COMMAND "${CMAKE_C_COMPILER}"

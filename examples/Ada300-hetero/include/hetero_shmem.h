@@ -60,6 +60,8 @@
  * -------------------------------------------------------------------------*/
 #define HETERO_OP_MATMUL         0U   /* matmul: C[M,N] = A[M,K] * B[K,N]  */
 #define HETERO_OP_SQRT           1U   /* element-wise sqrt: out[i]=sqrt(in[i]) */
+#define HETERO_OP_ADD            2U   /* element-wise add:  out[i]=in0[i]+in1[i] */
+#define HETERO_OP_EXP            3U   /* element-wise exp:  out[i]=exp(in[i])  */
 
 /* -------------------------------------------------------------------------
  * ctrl->status values  (written by the device)
@@ -123,6 +125,39 @@ struct hetero_sqrt_hdr {
 };
 
 #define HETERO_SQRT_HDR_SIZE    ((uint32_t)sizeof(struct hetero_sqrt_hdr))
+
+/* -------------------------------------------------------------------------
+ * Add command blob (at cmd_buffer + blob_offset).
+ *
+ * Layout:
+ *   [ hetero_add_hdr  ]        4 bytes
+ *   [ float in0[n]    ]        n * 4 bytes  (first operand)
+ *   [ float in1[n]    ]        n * 4 bytes  (second operand)
+ *
+ * Result buffer (at result_buffer + result_offset):
+ *   [ float out[n]    ]        n * 4 bytes  (add results)
+ * -------------------------------------------------------------------------*/
+struct hetero_add_hdr {
+    int32_t n;    /* number of elements */
+};
+
+#define HETERO_ADD_HDR_SIZE     ((uint32_t)sizeof(struct hetero_add_hdr))
+
+/* -------------------------------------------------------------------------
+ * Exp command blob (at cmd_buffer + blob_offset).
+ *
+ * Layout:
+ *   [ hetero_exp_hdr  ]        4 bytes
+ *   [ float in[n]     ]        n * 4 bytes  (input elements)
+ *
+ * Result buffer (at result_buffer + result_offset):
+ *   [ float out[n]    ]        n * 4 bytes  (exp results)
+ * -------------------------------------------------------------------------*/
+struct hetero_exp_hdr {
+    int32_t n;    /* number of elements */
+};
+
+#define HETERO_EXP_HDR_SIZE     ((uint32_t)sizeof(struct hetero_exp_hdr))
 
 /* -------------------------------------------------------------------------
  * Physical base address of the ivshmem region in the RISC-V guest.

@@ -9,11 +9,11 @@ declare void @memrefCopy(i64, ptr, ptr)
 
 declare i32 @rxops_bridge_exp_f32(ptr, ptr, i64)
 
-declare i32 @rxops_bridge_sqrt_f32(ptr, ptr, i64)
+declare i32 @rxops_bridge_ada300_sqrt_f32(ptr, ptr, i64)
 
-declare i32 @rxops_bridge_matmul_f32(ptr, ptr, ptr, i64, i64, i64)
+declare i32 @rxops_bridge_ada300_matmul_f32(ptr, ptr, ptr, i64, i64, i64)
 
-declare i32 @rxops_bridge_add_f32(ptr, ptr, ptr, i64)
+declare i32 @rxops_bridge_ada300_add_f32(ptr, ptr, ptr, i64)
 
 define { ptr, ptr, i64, [2 x i64], [2 x i64] } @subgraph0(ptr %0, ptr %1, i64 %2, i64 %3, i64 %4, i64 %5, i64 %6, ptr %7, ptr %8, i64 %9, i64 %10, i64 %11, i64 %12, i64 %13, ptr %14, ptr %15, i64 %16, i64 %17, i64 %18, i64 %19, i64 %20, ptr %21, ptr %22, i64 %23, i64 %24, i64 %25, i64 %26, i64 %27, ptr %28, ptr %29, i64 %30, i64 %31, i64 %32, i64 %33, i64 %34) {
   %36 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } undef, ptr %0, 0
@@ -107,7 +107,7 @@ define { ptr, ptr, i64, [2 x i64], [2 x i64] } @subgraph0(ptr %0, ptr %1, i64 %2
   %112 = inttoptr i64 %111 to ptr
   %113 = ptrtoint ptr %86 to i64
   %114 = inttoptr i64 %113 to ptr
-  %115 = call i32 @rxops_bridge_matmul_f32(ptr %110, ptr %112, ptr %114, i64 1, i64 128, i64 64)
+  %115 = call i32 @rxops_bridge_ada300_matmul_f32(ptr %110, ptr %112, ptr %114, i64 1, i64 128, i64 64)
   %116 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 128) to i64))
   %117 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } undef, ptr %116, 0
   %118 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } %117, ptr %116, 1
@@ -143,7 +143,7 @@ define { ptr, ptr, i64, [2 x i64], [2 x i64] } @subgraph0(ptr %0, ptr %1, i64 %2
   %142 = inttoptr i64 %141 to ptr
   %143 = ptrtoint ptr %131 to i64
   %144 = inttoptr i64 %143 to ptr
-  %145 = call i32 @rxops_bridge_add_f32(ptr %144, ptr %140, ptr %142, i64 128)
+  %145 = call i32 @rxops_bridge_ada300_add_f32(ptr %144, ptr %140, ptr %142, i64 128)
   %146 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 128) to i64))
   %147 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } undef, ptr %146, 0
   %148 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } %147, ptr %146, 1
@@ -169,7 +169,7 @@ define { ptr, ptr, i64, [2 x i64], [2 x i64] } @subgraph0(ptr %0, ptr %1, i64 %2
   %168 = inttoptr i64 %167 to ptr
   %169 = ptrtoint ptr %159 to i64
   %170 = inttoptr i64 %169 to ptr
-  %171 = call i32 @rxops_bridge_sqrt_f32(ptr %170, ptr %168, i64 128)
+  %171 = call i32 @rxops_bridge_ada300_sqrt_f32(ptr %170, ptr %168, i64 128)
   %172 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 8192) to i64))
   %173 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } undef, ptr %172, 0
   %174 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } %173, ptr %172, 1
@@ -205,7 +205,7 @@ define { ptr, ptr, i64, [2 x i64], [2 x i64] } @subgraph0(ptr %0, ptr %1, i64 %2
   %198 = inttoptr i64 %197 to ptr
   %199 = ptrtoint ptr %172 to i64
   %200 = inttoptr i64 %199 to ptr
-  %201 = call i32 @rxops_bridge_matmul_f32(ptr %196, ptr %198, ptr %200, i64 1, i64 64, i64 128)
+  %201 = call i32 @rxops_bridge_ada300_matmul_f32(ptr %196, ptr %198, ptr %200, i64 1, i64 64, i64 128)
   %202 = call ptr @malloc(i64 ptrtoint (ptr getelementptr (float, ptr null, i32 64) to i64))
   %203 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } undef, ptr %202, 0
   %204 = insertvalue { ptr, ptr, i64, [2 x i64], [2 x i64] } %203, ptr %202, 1
@@ -241,7 +241,7 @@ define { ptr, ptr, i64, [2 x i64], [2 x i64] } @subgraph0(ptr %0, ptr %1, i64 %2
   %228 = inttoptr i64 %227 to ptr
   %229 = ptrtoint ptr %217 to i64
   %230 = inttoptr i64 %229 to ptr
-  %231 = call i32 @rxops_bridge_add_f32(ptr %230, ptr %226, ptr %228, i64 64)
+  %231 = call i32 @rxops_bridge_ada300_add_f32(ptr %230, ptr %226, ptr %228, i64 64)
   ret { ptr, ptr, i64, [2 x i64], [2 x i64] } %224
 }
 

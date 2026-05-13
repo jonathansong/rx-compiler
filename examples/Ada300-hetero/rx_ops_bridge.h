@@ -67,6 +67,21 @@ int rxops_bridge_matmul_f32(float *C, const float *A, const float *B,
 int rxops_bridge_add_f32(float *out, const float *in0, const float *in1,
                          int64_t n);
 
+/* -------------------------------------------------------------------------
+ * Ada300 SNPU backend variants
+ *
+ * Emitted by TopToRxOps when the Top op carries `device = "ada300"`.
+ * Implemented in host/rx_ops_bridge_hetero.c (ivshmem dispatch) on the
+ * host side, and in rx_ops_bridge_ada300.c on the baremetal device side.
+ * -------------------------------------------------------------------------*/
+
+int rxops_bridge_ada300_matmul_f32(float *C, const float *A, const float *B,
+                                   int64_t M, int64_t N, int64_t K);
+int rxops_bridge_ada300_sqrt_f32  (float *out, const float *in, int64_t n);
+int rxops_bridge_ada300_exp_f32   (float *out, const float *in, int64_t n);
+int rxops_bridge_ada300_add_f32   (float *out, const float *in0,
+                                   const float *in1, int64_t n);
+
 #ifdef __cplusplus
 }
 #endif

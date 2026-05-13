@@ -47,6 +47,10 @@ extern void hetero_device_poll_cmd(void);
 extern void hetero_device_get_matmul(int32_t *M, int32_t *N, int32_t *K,
                                       float **A_out, float **B_out);
 extern void hetero_device_get_sqrt(int32_t *n_out, const float **in_out);
+extern void hetero_device_get_exp(int32_t *n_out, const float **in_out);
+extern void hetero_device_get_add(int32_t *n_out,
+                                   const float **in0_out,
+                                   const float **in1_out);
 extern void hetero_device_signal_done(const float *C, int32_t M, int32_t N,
                                        int rc);
 
@@ -174,6 +178,75 @@ int main(void)
             uint64_t t1 = rdtime();
 
             printf("[hetero-dev]   Sqrt done in %llu ticks, rc=%d\n",
+                   (unsigned long long)(t1 - t0), rc);
+
+            if (rc == 0 && n > 0) {
+                printf("[hetero-dev]   out[0] = ");
+                print_f32(out_buf[0]);
+                printf("\n");
+            }
+
+            /* M=n, N=1 reuses signal_done to write n floats. */
+            hetero_device_signal_done(rc == 0 ? out_buf : NULL, n, 1, rc);
+            mr_free(out_buf);
+
+        } else if (op == HETERO_OP_EXP) {
+            /* ----- Parse the exp parameters ------------------------------ */
+            int32_t n;
+            const float *in = NULL;
+            hetero_device_get_exp(&n, &in);
+
+            printf("[hetero-dev] cmd #%u: exp [%d elements]\n",
+                   (unsigned)cmd_count, (int)n);
+
+            float *out_buf = (float *)mr_alloc((size_t)n * sizeof(float),
+                                               MR_REGION_LPDDR);
+            if (!out_buf) {
+                printf("[hetero-dev] ERROR: alloc failed for exp out[%d]\n",
+                       (int)n);
+                hetero_device_signal_done(NULL, n, 1, -1);
+                continue;
+            }
+
+            uint64_t t0 = rdtime();
+            int rc = rxops_bridge_exp_f32(out_buf, in, (int64_t)n);
+            uint64_t t1 = rdtime();
+
+            printf("[hetero-dev]   Exp done in %llu ticks, rc=%d\n",
+                   (unsigned long long)(t1 - t0), rc);
+
+            if (rc == 0 && n > 0) {
+                printf("[hetero-dev]   out[0] = ");
+                print_f32(out_buf[0]);
+                printf("\n");
+            }
+
+            hetero_device_signal_done(rc == 0 ? out_buf : NULL, n, 1, rc);
+            mr_free(out_buf);
+
+        } else if (op == HETERO_OP_ADD) {
+            /* ----- Parse the add parameters ------------------------------ */
+            int32_t n;
+            const float *in0 = NULL, *in1 = NULL;
+            hetero_device_get_add(&n, &in0, &in1);
+
+            printf("[hetero-dev] cmd #%u: add [%d elements]\n",
+                   (unsigned)cmd_count, (int)n);
+
+            float *out_buf = (float *)mr_alloc((size_t)n * sizeof(float),
+                                               MR_REGION_LPDDR);
+            if (!out_buf) {
+                printf("[hetero-dev] ERROR: alloc failed for add out[%d]\n",
+                       (int)n);
+                hetero_device_signal_done(NULL, n, 1, -1);
+                continue;
+            }
+
+            uint64_t t0 = rdtime();
+            int rc = rxops_bridge_add_f32(out_buf, in0, in1, (int64_t)n);
+            uint64_t t1 = rdtime();
+
+            printf("[hetero-dev]   Add done in %llu ticks, rc=%d\n",
                    (unsigned long long)(t1 - t0), rc);
 
             if (rc == 0 && n > 0) {
