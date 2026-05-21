@@ -160,7 +160,7 @@ class RVV_USLoad_IntrOp<string mnemonic, list<Trait> traits = []> :
                   /*string opName=*/"intr." # mnemonic,
                   /*string enumName=*/"riscv_" # !subst(".", "_", mnemonic),
                   /*list<int> overloadedResults=*/[0],
-                  /*list<int> overloadedOperands=*/[2],
+                  /*list<int> overloadedOperands=*/[1, 2],
                   /*list<Trait> traits=*/traits,
                   /*int numResults=*/1>;
 
@@ -169,7 +169,7 @@ class RVV_USStore_IntrOp<string mnemonic, list<Trait> traits = []> :
                   /*string opName=*/"intr." # mnemonic,
                   /*string enumName=*/"riscv_" # !subst(".", "_", mnemonic),
                   /*list<int> overloadedResults=*/[],
-                  /*list<int> overloadedOperands=*/[0, 2],
+                  /*list<int> overloadedOperands=*/[0, 1, 2],
                   /*list<Trait> traits=*/traits,
                   /*int numResults=*/0>;
 
